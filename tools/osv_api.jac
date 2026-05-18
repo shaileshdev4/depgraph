@@ -23,6 +23,26 @@ def _severity_from_score(score: float) -> str {
     return "UNKNOWN";
 }
 
+def _score_from_severity_label(label: str) -> float {
+    u = str(label).strip().upper();
+    if u == "CRITICAL" {
+        return 9.8;
+    }
+    if u == "HIGH" {
+        return 8.1;
+    }
+    if u == "MODERATE" {
+        return 5.5;
+    }
+    if u == "MEDIUM" {
+        return 5.5;
+    }
+    if u == "LOW" {
+        return 3.1;
+    }
+    return 0.0;
+}
+
 def osv_query_npm(package_name: str, version: str) -> list[dict] {
     cache_key = f"npm:{package_name.lower()}@{version}";
     if cache_key in osv_cache {
@@ -50,13 +70,54 @@ def osv_query_npm(package_name: str, version: str) -> list[dict] {
             continue;
         }
         cve_id = str(item.get("id", ""));
+        aliases = as_list(item.get("aliases", []));
+        for alias in aliases {
+            alias_str = str(alias);
+            if alias_str.startswith("CVE-") {
+                cve_id = alias_str;
+                break;
+            }
+        }
         if not cve_id {
             continue;
         }
         score = 0.0;
         db = item.get("database_specific", {});
-        if isinstance(db, dict) and "cvss_score" in db {
-            score = float(str(db["cvss_score"]));
+        if isinstance(db, dict) {
+            if "cvss_score" in db {
+                try {
+                    score = float(str(db["cvss_score"]));
+                } except Exception {}
+            }
+            if score <= 0.0 and "severity" in db {
+                label_score = _score_from_severity_label(str(db["severity"]));
+                if label_score > score {
+                    score = label_score;
+                }
+            }
+        }
+        severities = as_list(item.get("severity", []));
+        for sev in severities {
+            if not isinstance(sev, dict) {
+                continue;
+            }
+            if "score" not in sev {
+                continue;
+            }
+            raw = str(sev["score"]).strip();
+            if not raw {
+                continue;
+            }
+            cvss_prefix = "CVSS";
+            if raw.startswith(cvss_prefix) {
+                continue;
+            }
+            try {
+                candidate = float(raw);
+                if candidate > score {
+                    score = candidate;
+                }
+            } except Exception {}
         }
         summary = str(item.get("summary", ""));
         if not summary {
