@@ -1,0 +1,31 @@
+[project]
+name = "depgraph"
+version = "0.1.0"
+description = "Autonomous dependency vulnerability investigation agent (JacHacks 2026)"
+entry-point = "main.jac"
+
+[dependencies]
+
+[dependencies.npm]
+jac-client-node = "1.0.7"
+
+[dependencies.npm.dev]
+"@jac-client/dev-deps" = "1.0.0"
+
+[dev-dependencies]
+watchdog = ">=3.0.0"
+
+[serve]
+base_route_app = "app"
+
+[plugins]
+[plugins.client]
+
+[plugins.byllm]
+# Set FEATHERLESS_API_KEY in .env — see .env.example
+
+[plugins.byllm.model]
+default_model = "featherless/deepseek-ai/DeepSeek-V3-0324"
+
+[plugins.byllm.call_params]
+temperature = 0.2
