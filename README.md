@@ -26,6 +26,22 @@ jac start --dev
 
 Open http://localhost:8000/cl/app
 
+## What works now (MVP)
+
+- Paste a **public GitHub** repo URL with **`package-lock.json`** on the default branch.
+- **Investigate** fetches the lockfile, builds a **Package** graph under an `InvestigationSession`, and spawns **SubtreeWalker** on each direct dependency (depth ≤ 1).
+- Each subtree walker queries **NVD** (keyword search) and attaches **CVE** nodes for matches.
+- The UI shows a simple **event log** from the orchestrator (fetch → graph → spawn).
+
+## Development
+
+Type-check only project sources (do **not** run `jac check` on the whole folder — it will descend into `.venv`):
+
+```powershell
+$env:PYTHONIOENCODING = "utf-8"
+jac check main.jac graph tools walkers
+```
+
 ## Layout
 
 ```
@@ -33,7 +49,7 @@ depgraph/
 ├── main.jac              # entry + landing UI
 ├── graph/                # Package, CVE, edges
 ├── walkers/              # DepGraphAgent, SubtreeWalker, …
-├── tools/                # NVD, GitHub, npm (deterministic)
+├── tools/                # GitHub, NVD, lockfile parse, Python helpers
 ├── models/               # Featherless LLM config
 └── components/           # jac-client UI
 ```
