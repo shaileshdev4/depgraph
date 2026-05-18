@@ -30,5 +30,5 @@ glob spawn_llm = Model(
         "api_base": "https://api.featherless.ai/v1",
         "http_client": True
     },
-    call_params={"temperature": 0, "max_tokens": 64}
+    call_params={"temperature": 0, "max_tokens": 256}
 );

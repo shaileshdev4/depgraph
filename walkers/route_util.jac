@@ -27,5 +27,5 @@ def select_spawn_root_index(
 ) -> list[int] by llm(
     model=spawn_llm,
     temperature=0,
-    max_tokens=32
+    max_tokens=256
 );
