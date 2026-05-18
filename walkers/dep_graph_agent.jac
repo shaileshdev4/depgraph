@@ -7,7 +7,7 @@ import from tools.jac_coerce { as_list }
 import from tools.lockfile_parser { parse_npm_lockfile, parse_npm_package_json }
 import from tools.risk_scorer { package_risk_score }
 import from walkers.report_util { generate_executive_summary }
-import from walkers.route_util { select_spawn_root_indexes }
+import from walkers.route_util { select_spawn_root_index }
 import from walkers.subtree_walker { SubtreeWalker }
 
 def _spawn_roots_fallback(candidates: list[Package], pick_count: int) -> list[Package] {
@@ -49,11 +49,22 @@ def _spawn_roots_fallback(candidates: list[Package], pick_count: int) -> list[Pa
     return selected;
 }
 
+def _top_risk_candidates(
+    candidates: list[Package],
+    limit: int
+) -> list[Package] {
+    if len(candidates) <= limit {
+        return candidates;
+    }
+    return _spawn_roots_fallback(candidates, limit);
+}
+
 walker:pub DepGraphAgent {
     has repo_url: str;
     has ecosystem: str = "npm";
     has max_direct_deps: int = 8;
     has max_graph_packages: int = 200;
+    has max_spawn_llm_pool: int = 30;
     has reports: list[dict] = [];
 
     can start with Root entry {
@@ -159,55 +170,115 @@ walker:pub DepGraphAgent {
             }
         }
 
-        descriptions = "";
-        slot = 0;
-        for pkg_node in candidates {
-            risk = package_risk_score(
-                pkg_node.name,
-                pkg_node.version,
-                pkg_node.depth,
-                pkg_node.is_direct
-            );
-            descriptions = (
-                f"{descriptions}{slot}) {pkg_node.name}@"
-                f"{pkg_node.version} (risk={risk})\n"
-            );
-            slot += 1;
-        }
+        spawn_pool = _top_risk_candidates(
+            candidates,
+            self.max_spawn_llm_pool
+        );
 
         spawn_targets: list[Package] = [];
         spawn_mode = "fallback";
+        llm_spawn_picks = 0;
+        spawn_llm_failures = 0;
+        remaining_pool: list[Package] = [];
+        for pkg_node in spawn_pool {
+            remaining_pool.append(pkg_node);
+        }
+
         report {
             "event": "spawn_decision",
             "candidate_count": len(candidates),
+            "llm_pool_count": len(spawn_pool),
             "pick_count": self.max_direct_deps,
-            "message": "LLM selecting subtree spawn roots"
+            "message": "LLM selecting subtree spawn roots from top risk pool"
         };
-        try {
-            raw_spawn = select_spawn_root_indexes(
-                descriptions,
-                self.max_direct_deps
-            );
-            if raw_spawn {
-                spawn_mode = "llm";
-                for pick in raw_spawn {
-                    if pick >= 0 and pick < len(candidates) {
-                        spawn_targets.append(candidates[pick]);
+
+        while (
+            len(spawn_targets) < self.max_direct_deps
+            and len(remaining_pool) > 0
+        ) {
+            descriptions = "";
+            slot = 0;
+            for pkg_node in remaining_pool {
+                descriptions = (
+                    f"{descriptions}{slot}) {pkg_node.name}\n"
+                );
+                slot += 1;
+            }
+
+            picked_idx = -1;
+            spawn_err = "";
+            attempts = 0;
+            while attempts < 2 and picked_idx < 0 {
+                attempts += 1;
+                try {
+                    raw_spawn = select_spawn_root_index(descriptions);
+                    if raw_spawn and len(raw_spawn) >= 1 {
+                        pick = raw_spawn[0];
+                        if pick >= 0 and pick < len(remaining_pool) {
+                            picked_idx = pick;
+                        }
                     }
-                    if len(spawn_targets) >= self.max_direct_deps {
-                        break;
-                    }
+                } except Exception as e {
+                    spawn_err = str(e);
                 }
             }
-        } except Exception {
-            spawn_mode = "fallback";
+            if picked_idx < 0 {
+                spawn_llm_failures += 1;
+                risk_one = _spawn_roots_fallback(remaining_pool, 1);
+                if not risk_one {
+                    break;
+                }
+                chosen = risk_one[0];
+            } else {
+                chosen = remaining_pool[picked_idx];
+                llm_spawn_picks += 1;
+            }
+            spawn_targets.append(chosen);
+            next_pool: list[Package] = [];
+            for pkg_node in remaining_pool {
+                if pkg_node.name != chosen.name {
+                    next_pool.append(pkg_node);
+                }
+            }
+            remaining_pool = next_pool;
         }
-        if not spawn_targets {
-            spawn_targets = _spawn_roots_fallback(
-                candidates,
-                self.max_direct_deps
-            );
-            spawn_mode = "fallback";
+
+        if llm_spawn_picks > 0 {
+            spawn_mode = "llm";
+        }
+        if spawn_llm_failures > 0 and llm_spawn_picks == 0 {
+            report {
+                "event": "spawn_llm_failed",
+                "reason": "All spawn LLM picks failed",
+                "failures": spawn_llm_failures
+            };
+        } elif spawn_llm_failures > 0 {
+            report {
+                "event": "spawn_llm_partial",
+                "llm_picks": llm_spawn_picks,
+                "risk_picks": spawn_llm_failures,
+                "message": "Some spawn picks used risk fallback after LLM empty response"
+            };
+        }
+        if len(spawn_targets) < self.max_direct_deps {
+            picked_names: dict = {};
+            for pkg_node in spawn_targets {
+                picked_names[pkg_node.name] = True;
+            }
+            extra_pool: list[Package] = [];
+            for pkg_node in candidates {
+                if pkg_node.name not in picked_names {
+                    extra_pool.append(pkg_node);
+                }
+            }
+            need = self.max_direct_deps - len(spawn_targets);
+            extras = _spawn_roots_fallback(extra_pool, need);
+            for pkg_node in extras {
+                spawn_targets.append(pkg_node);
+            }
+            if llm_spawn_picks == 0 {
+                spawn_mode = "fallback";
+            }
         }
 
         spawned_names = "";
@@ -218,7 +289,9 @@ walker:pub DepGraphAgent {
             "event": "spawn_chosen",
             "mode": spawn_mode,
             "targets": spawned_names.strip(),
-            "count": len(spawn_targets)
+            "count": len(spawn_targets),
+            "llm_picks": llm_spawn_picks,
+            "risk_picks": spawn_llm_failures
         };
 
         spawned = 0;
