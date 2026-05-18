@@ -4,6 +4,8 @@ import from tools.env_util { ensure_dotenv_loaded }
 
 sem nvd_search_cve = "Search NVD for CVEs related to a package name; returns normalized dicts.";
 
+glob nvd_cache: dict[str, list[dict]] = {};
+
 def _severity_from_score(score: float) -> str {
     if score >= 9.0 {
         return "CRITICAL";
@@ -21,6 +23,11 @@ def _severity_from_score(score: float) -> str {
 }
 
 def nvd_search_cve(package_name: str, version: str = "") -> list[dict] {
+    cache_key = f"{package_name.lower()}@{version}";
+    if cache_key in nvd_cache {
+        return nvd_cache[cache_key];
+    }
+
     ensure_dotenv_loaded();
     import os;
     import requests;
@@ -77,5 +84,6 @@ def nvd_search_cve(package_name: str, version: str = "") -> list[dict] {
             }
         );
     }
+    nvd_cache[cache_key] = results;
     return results;
 }

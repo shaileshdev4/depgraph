@@ -1,6 +1,6 @@
 """Main orchestrator — manifest ingest, graph build, spawn subtree walkers."""
 
-import from graph.nodes { InvestigationSession, Package }
+import from graph.nodes { InvestigationSession, Package, CVE }
 import from graph.builder { build_package_graph }
 import from tools.github_api { fetch_github_lockfile }
 import from tools.jac_coerce { as_list }
@@ -10,6 +10,7 @@ import from walkers.subtree_walker { SubtreeWalker }
 walker:pub DepGraphAgent {
     has repo_url: str;
     has ecosystem: str = "npm";
+    has max_direct_deps: int = 8;
     has reports: list[dict] = [];
 
     can start with Root entry {
@@ -68,18 +69,63 @@ walker:pub DepGraphAgent {
         spawned = 0;
         for pkg_node in [session-->][?:Package] {
             if pkg_node.is_direct and pkg_node.depth <= 1 {
-                SubtreeWalker() spawn pkg_node;
+                if spawned >= self.max_direct_deps {
+                    break;
+                }
+                subtree = SubtreeWalker() spawn pkg_node;
+                for entry in subtree.reports {
+                    report entry;
+                }
                 spawned += 1;
             }
         }
         if spawned == 0 {
             for pkg_node in [session-->][?:Package] {
-                SubtreeWalker() spawn pkg_node;
+                subtree = SubtreeWalker() spawn pkg_node;
+                for entry in subtree.reports {
+                    report entry;
+                }
                 spawned += 1;
                 break;
             }
         }
 
-        report {"event": "subtrees_spawned", "spawn_count": spawned};
+        report {
+            "event": "subtrees_spawned",
+            "spawn_count": spawned,
+            "max_direct_deps": self.max_direct_deps
+        };
+
+        findings: list[dict] = [];
+        for pkg_node in [session-->][?:Package] {
+            cve_nodes = [pkg_node-->][?:CVE];
+            if not cve_nodes {
+                continue;
+            }
+            max_cvss = 0.0;
+            top_cve = "";
+            for cve_node in cve_nodes {
+                if cve_node.cvss_score > max_cvss {
+                    max_cvss = cve_node.cvss_score;
+                    top_cve = cve_node.cve_id;
+                }
+            }
+            findings.append(
+                {
+                    "package": pkg_node.name,
+                    "version": pkg_node.version,
+                    "cve_count": len(cve_nodes),
+                    "max_cvss": max_cvss,
+                    "top_cve": top_cve
+                }
+            );
+        }
+
+        report {
+            "event": "investigation_complete",
+            "packages_scanned": spawned,
+            "vulnerable_count": len(findings),
+            "findings": findings
+        };
     }
 }

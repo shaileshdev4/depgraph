@@ -4,14 +4,9 @@ import from graph.nodes { Package, CVE }
 import from tools.nvd_api { nvd_search_cve }
 
 walker SubtreeWalker {
-    has depth_limit: int = 4;
     has reports: list[dict] = [];
 
     can scan with Package entry {
-        if here.depth > self.depth_limit {
-            disengage;
-        }
-
         report {
             "event": "nvd_lookup",
             "package": here.name,
@@ -46,7 +41,5 @@ walker SubtreeWalker {
             "max_cvss": max_cvss,
             "critical": has_critical
         };
-
-        visit [-->][?:Package];
     }
 }

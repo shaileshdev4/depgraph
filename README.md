@@ -29,9 +29,9 @@ Open http://localhost:8000/cl/app
 ## What works now (MVP)
 
 - Paste a **public GitHub** repo URL with **`package-lock.json`** on the default branch.
-- **Investigate** fetches the lockfile, builds a **Package** graph under an `InvestigationSession`, and spawns **SubtreeWalker** on each direct dependency (depth ≤ 1).
-- Each subtree walker queries **NVD** (keyword search) and attaches **CVE** nodes for matches.
-- The UI shows a simple **event log** from the orchestrator (fetch → graph → spawn).
+- **Investigate** fetches the lockfile, builds a **Package** graph under an `InvestigationSession`, and spawns **SubtreeWalker** on up to **8 direct dependencies** (demo cap).
+- Each subtree walker queries **NVD** (keyword search, in-memory cache) and attaches **CVE** nodes for matches.
+- The UI shows an **activity log** (orchestrator + NVD events) and a **vulnerable packages** summary.
 
 ## Development
 
