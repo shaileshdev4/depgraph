@@ -219,3 +219,46 @@ def fetch_github_npm_manifest(repo_url: str) -> dict {
         "repo": lock.get("repo", pkg.get("repo", ""))
     };
 }
+
+def search_github_package_imports(
+    owner: str,
+    repo: str,
+    package_name: str,
+    token: str = ""
+) -> list[str] {
+    import requests;
+
+    ensure_dotenv_loaded();
+    if not token {
+        import os;
+        token = os.environ.get("GITHUB_TOKEN", "");
+    }
+    headers = _github_headers(token);
+    q = f"repo:{owner}/{repo} {package_name} import";
+    url = "https://api.github.com/search/code";
+    try {
+        resp = requests.get(
+            url,
+            headers=headers,
+            params={"q": q, "per_page": 8},
+            timeout=30
+        );
+        if resp.status_code != 200 {
+            return [];
+        }
+        data = resp.json();
+        paths: list[str] = [];
+        items = data.get("items", []);
+        if not isinstance(items, list) {
+            return [];
+        }
+        for item in items {
+            if isinstance(item, dict) and "path" in item {
+                paths.append(str(item["path"]));
+            }
+        }
+        return paths;
+    } except Exception {
+        return [];
+    }
+}
