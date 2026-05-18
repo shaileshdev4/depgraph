@@ -6,6 +6,30 @@ import from tools.jac_coerce { as_list }
 import from tools.risk_scorer { package_risk_score }
 import from walkers.deep_dive_walker { DeepDiveWalker }
 import from walkers.route_util { choose_neighbor_indexes }
+import from walkers.usage_context_util {
+    package_usage_surface,
+    compute_exploitability,
+    attach_usage_context_for_package,
+    package_has_usage_context,
+    push_live_event
+}
+
+def usage_surface_route_tag(surface: str) -> str {
+    s = str(surface).lower();
+    if s == "production" {
+        return "[PRODUCTION - auth surface]";
+    }
+    if s == "test" {
+        return "[TEST only]";
+    }
+    if s == "build" {
+        return "[BUILD only]";
+    }
+    if s == "mixed" {
+        return "[MIXED prod+test]";
+    }
+    return "[usage unknown]";
+}
 
 def neighbor_max_cvss(pkg_node: Package) -> float {
     best = pkg_node.cvss_score;
@@ -33,6 +57,9 @@ def pick_best_fallback_index(neighbor_list: list[Package]) -> int {
                 )
             ) / 100.0;
         }
+        if package_usage_surface(pkg_node) == "production" {
+            score += 0.25;
+        }
         if score > best_score {
             best_score = score;
             best_idx = idx;
@@ -47,6 +74,9 @@ walker SubtreeWalker {
     has max_visits: int = 5;
     has visit_count: int = 0;
     has osv_lookup_count: int = 0;
+    has session_id: str = "";
+    has repo_url: str = "";
+    has session_packages: list = [];
     has reports: list[dict] = [];
     has critical_findings: list[dict] = [];
 
@@ -60,18 +90,22 @@ walker SubtreeWalker {
         self.visit_count += 1;
 
         self.osv_lookup_count += 1;
-        report {
+        nvd_lookup_evt = {
             "event": "nvd_lookup",
             "package": here.name,
             "version": here.version,
             "depth": here.depth
         };
+        report nvd_lookup_evt;
+        push_live_event(self.session_id, nvd_lookup_evt);
 
         cves = lookup_package_cves(here.name, here.version, "npm");
         max_cvss = 0.0;
         has_critical = False;
         top_cve_id = "";
         source = "osv";
+        here_surface = package_usage_surface(here);
+
         for cve_data in cves {
             if cve_data.get("source", "") == "nvd" {
                 source = "nvd";
@@ -93,6 +127,8 @@ walker SubtreeWalker {
             }
         }
 
+        exploitability = compute_exploitability(max_cvss, here_surface);
+
         if has_critical and top_cve_id {
             dive = DeepDiveWalker(
                 target_name=here.name,
@@ -108,20 +144,38 @@ walker SubtreeWalker {
             }
         }
 
-        report {
+        nvd_result_evt = {
             "event": "nvd_result",
             "package": here.name,
+            "version": here.version,
             "cve_count": len(cves),
             "max_cvss": max_cvss,
             "critical": has_critical,
-            "source": source
+            "source": source,
+            "usage_surface": here_surface,
+            "exploitability": exploitability
         };
+        report nvd_result_evt;
+        push_live_event(self.session_id, nvd_result_evt);
+
+        if len(cves) > 0 and self.repo_url {
+            if not package_has_usage_context(here) {
+                attach_usage_context_for_package(
+                    self.repo_url,
+                    here,
+                    self.session_id,
+                    self.session_packages
+                );
+            }
+        }
 
         if self.visit_count >= self.max_visits {
             disengage;
         }
 
-        neighbor_list: list[Package] = as_list([here-->][?:Package]);
+        neighbor_list: list[Package] = as_list(
+            [here ->:DependsOn:->][?:Package]
+        );
         neighbor_cnt = len(neighbor_list);
         if neighbor_cnt == 0 {
             disengage;
@@ -131,29 +185,45 @@ walker SubtreeWalker {
         slot = 0;
         for pkg_node in neighbor_list {
             n_cvss = neighbor_max_cvss(pkg_node);
+            n_surface = package_usage_surface(pkg_node);
+            n_tag = usage_surface_route_tag(n_surface);
             descriptions = (
                 f"{descriptions}{slot}) {pkg_node.name}@"
-                f"{pkg_node.version} (known_cvss={n_cvss})\n"
+                f"{pkg_node.version} {n_tag} (known_cvss={n_cvss})\n"
             );
             slot += 1;
         }
 
-        report {
+        route_decision_evt = {
             "event": "route_decision",
             "package": here.name,
+            "version": here.version,
             "neighbor_count": neighbor_cnt,
             "max_cvss": max_cvss,
             "cve_count": len(cves),
+            "usage_surface": here_surface,
+            "exploitability": exploitability,
             "message": "LLM selecting next dependency to investigate"
         };
+        report route_decision_evt;
+        push_live_event(self.session_id, route_decision_evt);
 
         fallback_idx = pick_best_fallback_index(neighbor_list);
         pick_indexes: list[int] = [fallback_idx];
         route_mode = "fallback";
 
-        critical_context = "";
+        critical_context = (
+            f"Current package usage: {usage_surface_route_tag(here_surface)}. "
+        );
+        if exploitability != "MEDIUM" or max_cvss > 0.0 {
+            critical_context = (
+                f"{critical_context}Exploitability={exploitability}. "
+            );
+        }
         if self.critical_findings {
-            critical_context = "TRANSITIVE CRITICAL FINDINGS: ";
+            critical_context = (
+                f"{critical_context}TRANSITIVE CRITICAL FINDINGS: "
+            );
             for f in self.critical_findings {
                 pkg_name = str(f["package"]);
                 cvss_val = f["cvss"];
@@ -202,13 +272,21 @@ walker SubtreeWalker {
         for pkg_node in to_visit {
             picked_names = f"{picked_names}{pkg_node.name} ";
         }
-        report {
+        route_idx = 0;
+        if pick_indexes {
+            route_idx = pick_indexes[0];
+        }
+        route_chosen_evt = {
             "event": "route_chosen",
             "from_package": here.name,
+            "from_version": here.version,
             "mode": route_mode,
+            "index": route_idx,
             "indexes": pick_indexes,
             "targets": picked_names.strip()
         };
+        report route_chosen_evt;
+        push_live_event(self.session_id, route_chosen_evt);
 
         visit to_visit;
     }

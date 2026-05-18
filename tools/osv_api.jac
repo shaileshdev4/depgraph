@@ -43,6 +43,34 @@ def _score_from_severity_label(label: str) -> float {
     return 0.0;
 }
 
+def _extract_fixed_version(item: dict) -> str {
+    affected_list = as_list(item.get("affected", []));
+    for affected in affected_list {
+        if not isinstance(affected, dict) {
+            continue;
+        }
+        ranges = as_list(affected.get("ranges", []));
+        for range_ in ranges {
+            if not isinstance(range_, dict) {
+                continue;
+            }
+            events = as_list(range_.get("events", []));
+            for event in events {
+                if not isinstance(event, dict) {
+                    continue;
+                }
+                if "fixed" in event {
+                    fixed = str(event["fixed"]);
+                    if fixed and fixed != "0" {
+                        return fixed;
+                    }
+                }
+            }
+        }
+    }
+    return "";
+}
+
 def osv_query_npm(package_name: str, version: str) -> list[dict] {
     cache_key = f"npm:{package_name.lower()}@{version}";
     if cache_key in osv_cache {
@@ -119,6 +147,18 @@ def osv_query_npm(package_name: str, version: str) -> list[dict] {
                 }
             } except Exception {}
         }
+        if score <= 0.0 {
+            ecosystem_specific = item.get("ecosystem_specific", {});
+            if isinstance(ecosystem_specific, dict) {
+                sev_label = str(ecosystem_specific.get("severity", ""));
+                if sev_label {
+                    label_score = _score_from_severity_label(sev_label);
+                    if label_score > 0.0 {
+                        score = label_score;
+                    }
+                }
+            }
+        }
         summary = str(item.get("summary", ""));
         if not summary {
             details = str(item.get("details", ""));
@@ -130,7 +170,7 @@ def osv_query_npm(package_name: str, version: str) -> list[dict] {
                 "cvss_score": score,
                 "severity": _severity_from_score(score),
                 "description": summary[0:500],
-                "fixed_version": "",
+                "fixed_version": _extract_fixed_version(item),
                 "source": "osv"
             }
         );

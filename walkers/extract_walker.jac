@@ -1,10 +1,31 @@
 """Classify package usage from GitHub import file paths (deterministic, no LLM)."""
 
+def filter_code_import_paths(paths: list[str]) -> list[str] {
+    filtered: list[str] = [];
+    for path in paths {
+        p = str(path);
+        pl = p.lower();
+        if (
+            pl.endswith(".ts")
+            or pl.endswith(".js")
+            or pl.endswith(".tsx")
+            or pl.endswith(".jsx")
+            or pl.endswith(".mjs")
+            or pl.endswith(".cjs")
+        ) {
+            filtered.append(p);
+        }
+    }
+    return filtered;
+}
+
 def classify_usage_from_paths(
     package_name: str,
     importing_files: list[str]
 ) -> dict {
     import re;
+
+    importing_files = filter_code_import_paths(importing_files);
 
     TEST_PATTERNS = [
         r"[/\\]test[s]?[/\\]",
@@ -44,17 +65,18 @@ def classify_usage_from_paths(
     prod_count = 0;
 
     for path in importing_files {
+        path_lower = str(path).lower();
         is_test = False;
         is_build = False;
         for pattern in TEST_PATTERNS {
-            if re.search(pattern, path, re.IGNORECASE) {
+            if re.search(pattern, path_lower) {
                 is_test = True;
                 break;
             }
         }
         if not is_test {
             for pattern in BUILD_PATTERNS {
-                if re.search(pattern, path, re.IGNORECASE) {
+                if re.search(pattern, path_lower) {
                     is_build = True;
                     break;
                 }

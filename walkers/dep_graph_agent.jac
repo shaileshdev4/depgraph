@@ -1,6 +1,6 @@
 """Main orchestrator — manifest ingest, graph build, spawn subtree walkers."""
 
-import from graph.nodes { InvestigationSession, Package, CVE, UsageContext }
+import from graph.nodes { InvestigationSession, Package, CVE }
 import from graph.builder { build_package_graph }
 import from graph.snapshot_util {
     build_graph_snapshot,
@@ -9,17 +9,22 @@ import from graph.snapshot_util {
 }
 import from tools.github_api {
     fetch_github_npm_manifest,
-    parse_github_repo_url,
-    search_github_package_imports
+    parse_github_repo_url
 }
 import from tools.jac_coerce { as_list }
 import from tools.lockfile_parser { parse_npm_lockfile, parse_npm_package_json }
 import from tools.risk_scorer { package_risk_score }
-import from walkers.extract_walker { classify_usage_from_paths }
 import from walkers.remediation_walker { RemediationWalker }
-import from walkers.report_util { generate_executive_summary }
+import from walkers.report_util { generate_executive_summary_safe }
 import from walkers.route_util { select_spawn_root_index }
 import from walkers.subtree_walker { SubtreeWalker }
+import from walkers.usage_context_util {
+    package_usage_surface,
+    compute_exploitability,
+    package_has_usage_context,
+    attach_usage_context_for_package,
+    refresh_findings_usage,
+}
 import from tools.investigation_runner { session_push }
 
 def _spawn_roots_fallback(candidates: list[Package], pick_count: int) -> list[Package] {
@@ -75,7 +80,7 @@ walker:pub DepGraphAgent {
     has repo_url: str;
     has ecosystem: str = "npm";
     has max_direct_deps: int = 8;
-    has max_graph_packages: int = 200;
+    has max_graph_packages: int = 300;
     has max_spawn_llm_pool: int = 30;
     has session_id: str = "";
     has reports: list[dict] = [];
@@ -212,47 +217,6 @@ walker:pub DepGraphAgent {
                     "edge_count": edge_cnt
                 }
             );
-        }
-
-        for pkg_node in session_packages {
-            if not pkg_node.is_direct or pkg_node.depth > 1 {
-                continue;
-            }
-            paths = search_github_package_imports(self.repo_url, pkg_node.name);
-            if not paths {
-                ctx = {
-                    "surface": "unknown",
-                    "is_prod": False,
-                    "importing_file_count": 0,
-                    "importing_files": [],
-                };
-            } else {
-                ctx = classify_usage_from_paths(pkg_node.name, paths);
-            }
-            usage_surface = str(ctx["surface"]);
-            is_prod = bool(ctx["is_prod"]);
-            import_files = ctx["importing_files"];
-            if not isinstance(import_files, list) {
-                import_files = paths[0:6];
-            }
-            usage_node = UsageContext(
-                risk_surface=usage_surface,
-                is_reachable_in_prod=is_prod,
-                called_from_modules=paths
-            );
-            pkg_node ++> usage_node;
-            report {
-                "event": "usage_context",
-                "package": pkg_node.name,
-                "version": pkg_node.version,
-                "surface": usage_surface,
-                "risk_surface": usage_surface,
-                "is_prod": is_prod,
-                "is_reachable_in_prod": is_prod,
-                "importing_file_count": ctx["importing_file_count"],
-                "importing_files": import_files,
-                "import_file_count": ctx["importing_file_count"]
-            };
         }
 
         candidates: list[Package] = [];
@@ -449,6 +413,15 @@ walker:pub DepGraphAgent {
             );
         }
 
+        for pkg_node in spawn_targets {
+            attach_usage_context_for_package(
+                self.repo_url,
+                pkg_node,
+                self.session_id,
+                session_packages
+            );
+        }
+
         spawned = 0;
         lookup_count = 0;
         route_llm_count = 0;
@@ -457,14 +430,14 @@ walker:pub DepGraphAgent {
         for pkg_node in spawn_targets {
             subtree = SubtreeWalker(
                 depth_limit=3,
-                max_visits=5
+                max_visits=5,
+                session_id=self.session_id,
+                repo_url=self.repo_url,
+                session_packages=session_packages
             ) spawn pkg_node;
             sub_lookups = subtree.osv_lookup_count;
             for entry in subtree.reports {
                 report entry;
-                if self.session_id {
-                    session_push(self.session_id, entry);
-                }
                 if "event" in entry {
                     ev_name = str(entry["event"]);
                     if ev_name == "route_chosen" {
@@ -492,6 +465,22 @@ walker:pub DepGraphAgent {
             spawned += 1;
         }
 
+        for pkg_node in session_packages {
+            cve_nodes = [pkg_node-->][?:CVE];
+            if not cve_nodes {
+                continue;
+            }
+            if package_has_usage_context(pkg_node) {
+                continue;
+            }
+            attach_usage_context_for_package(
+                self.repo_url,
+                pkg_node,
+                self.session_id,
+                session_packages
+            );
+        }
+
         report {
             "event": "subtrees_spawned",
             "spawn_count": spawned,
@@ -517,6 +506,7 @@ walker:pub DepGraphAgent {
                     fixed_version = str(cve_node.fixed_version);
                 }
             }
+            finding_surface = package_usage_surface(pkg_node);
             findings.append(
                 {
                     "package": pkg_node.name,
@@ -528,10 +518,37 @@ walker:pub DepGraphAgent {
                     "depth": pkg_node.depth,
                     "is_direct": pkg_node.is_direct,
                     "deep_dive_triggered": pkg_node.name in deep_dive_names,
-                    "fixed_version": fixed_version
+                    "fixed_version": fixed_version,
+                    "usage_surface": finding_surface,
+                    "exploitability": compute_exploitability(
+                        max_cvss,
+                        finding_surface
+                    )
                 }
             );
         }
+
+        for item in findings {
+            pkg_name = str(item["package"]);
+            for pkg_node in session_packages {
+                if pkg_node.name != pkg_name {
+                    continue;
+                }
+                if str(pkg_node.version) != str(item["version"]) {
+                    continue;
+                }
+                if not package_has_usage_context(pkg_node) {
+                    attach_usage_context_for_package(
+                        self.repo_url,
+                        pkg_node,
+                        self.session_id,
+                        session_packages
+                    );
+                }
+                break;
+            }
+        }
+        refresh_findings_usage(findings, session_packages);
 
         for pkg_node in [session-->][?:Package] {
             cve_nodes = [pkg_node-->][?:CVE];
@@ -548,7 +565,8 @@ walker:pub DepGraphAgent {
         for item in findings {
             findings_lines = (
                 f"{findings_lines}{item['package']}@{item['version']} "
-                f"cvss={item['max_cvss']} ({item['top_cve']})\n"
+                f"cvss={item['max_cvss']} exploitability={item['exploitability']} "
+                f"surface={item['usage_surface']} ({item['top_cve']})\n"
             );
         }
         if not findings_lines {
@@ -564,7 +582,7 @@ walker:pub DepGraphAgent {
         report {"event": "report_generating"};
         summary = "";
         try {
-            summary = generate_executive_summary(
+            summary = generate_executive_summary_safe(
                 self.repo_url,
                 findings_lines,
                 lookup_count,

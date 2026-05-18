@@ -259,6 +259,7 @@ def search_github_package_imports(repo_url: str, package_name: str) -> list[str]
         for item in items {
             if isinstance(item, dict) and item.get("path") {
                 paths.append(str(item["path"]));
+            }
         }
         return paths;
     } except Exception {

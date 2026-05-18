@@ -1,18 +1,24 @@
 """DepGraph — JacHacks 2026 entry point."""
 
 import from walkers.dep_graph_agent { DepGraphAgent }
+import from tools.investigation_runner {
+    begin_async_investigation,
+    poll_status
+}
 
 walker:pub start_investigation {
     has repo_url: str;
     has ecosystem: str = "npm";
     has max_direct_deps: int = 8;
+    has session_id: str = "";
     has reports: list[dict] = [];
 
     can run with Root entry {
         result = DepGraphAgent(
             repo_url=self.repo_url,
             ecosystem=self.ecosystem,
-            max_direct_deps=self.max_direct_deps
+            max_direct_deps=self.max_direct_deps,
+            session_id=self.session_id
         ) spawn root;
         for entry in result.reports {
             report entry;
@@ -20,10 +26,42 @@ walker:pub start_investigation {
     }
 }
 
+walker:pub start_investigation_async {
+    has repo_url: str;
+    has ecosystem: str = "npm";
+    has max_direct_deps: int = 8;
+    has reports: list[dict] = [];
+
+    can run with Root entry {
+        sid = begin_async_investigation(
+            self.repo_url,
+            self.ecosystem,
+            self.max_direct_deps
+        );
+        report {
+            "event": "session_created",
+            "session_id": sid,
+            "repo_url": self.repo_url,
+            "status": "running"
+        };
+    }
+}
+
+walker:pub investigation_status {
+    has session_id: str;
+    has since: int = 0;
+    has reports: list[dict] = [];
+
+    can run with Root entry {
+        snap = poll_status(self.session_id, self.since);
+        report snap;
+    }
+}
+
 to cl:
 
 def:pub app -> JsxElement {
-    has repo_url: str = "https://github.com/juice-shop/juice-shop";
+    has repo_url: str = "https://github.com/shaileshdev4/drygate";
     has status: str = "idle";
     has log_text: str = "";
     has findings_text: str = "";

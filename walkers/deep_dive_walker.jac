@@ -94,6 +94,6 @@ walker DeepDiveWalker {
             }
         }
 
-        visit [here-->][?:Package];
+        visit [here ->:DependsOn:->][?:Package];
     }
 }

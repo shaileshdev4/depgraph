@@ -12,8 +12,10 @@ Neighbors to investigate next:
 {neighbor_descriptions}
 
 Return EXACTLY ONE index as a JSON array.
-If transitive critical findings exist above, prioritize packages
-in the same ecosystem (auth, crypto, network).
+Prioritize neighbors tagged [PRODUCTION - auth surface] over [BUILD only]
+or [TEST only]. Auth, JWT, crypto, and network packages in production
+are highest priority.
+If transitive critical findings exist above, favor the same ecosystem.
 Examples: [3] or [0] or [7]"""
 def choose_neighbor_indexes(
     current_package: str,

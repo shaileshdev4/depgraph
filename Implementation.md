@@ -2,418 +2,475 @@
 
 > **Reference:** [DEPGRAPH_BLUEPRINT.md](../DEPGRAPH_BLUEPRINT.md) (workspace root)  
 > **Repo:** [github.com/shaileshdev4/depgraph](https://github.com/shaileshdev4/depgraph)  
-> **Last updated:** May 18, 2026 (post Route wiring + drygate E2E)  
-> **Estimated completion:** ~50% of full blueprint — **MVP pipeline works; autonomous Route is partial and compromised**
+> **Last updated:** May 18, 2026 (post React UI, live polling, spawn/route/deep-dive/remediation pass)  
+> **Estimated completion:** ~**65–70%** of full blueprint — **end-to-end demo works**; several primitives are partial or compromised (see §8, §14)
 
 ---
 
-## 0. Hackathon alignment (from blueprint §0)
+## 0. Hackathon alignment
 
 | Blueprint target | Status |
 |------------------|--------|
 | Event: JacHacks Spring 2026 | Active |
 | Deadline: May 19, 2026 | Pending submission |
-| Track: Agentic AI ($600) | Primary goal |
-| Required: Jac + Featherless | **Both wired** — Featherless calls succeed; routing quality is weak (see §14) |
+| Track: Agentic AI | Primary goal |
+| Required: Jac + Featherless | **Wired** — spawn, route, extract, report LLM calls run when keys are set |
 | Repo: `shaileshdev4/depgraph` | Live |
 
 ---
 
 ## 1. Solution pipeline — planned vs implemented
 
-Blueprint §4 flow:
-
 ```
 INPUT: GitHub repo URL
     ↓
-[PIPE] Parse manifest → Build dependency graph
+[PIPE] Fetch manifest → parse → build graph (risk-filtered, cap 200)
     ↓
-[SPAWN] Parallel SubtreeWalkers per direct dependency
+[EXTRACT] GitHub code search + LLM usage context (direct deps)
     ↓
-Per Package: [INVOKE] OSV/NVD  [EXTRACT] usage  [ROUTE] next node
+[SPAWN] LLM/risk picks up to 8 subtree roots → SubtreeWalker each (sequential)
     ↓
-[LOOP] Remediation validation
+Per package: [INVOKE] OSV/NVD  [ROUTE] next neighbor  [SPAWN] DeepDive if CVSS≥9
     ↓
-[GENERATE] Report + interactive graph
+[LOOP] RemediationWalker (schema + walker exist; rarely emits — see §6)
+    ↓
+[GENERATE] Executive summary (LLM) + findings + React graph
 ```
 
-| Stage | Blueprint | Current implementation | Status |
-|-------|-----------|------------------------|--------|
-| Input | GitHub URL or local path | GitHub URL only (`main.jac`) | **Partial** |
-| Ingest | Multiple ecosystems | `package-lock.json` via GitHub API only | **Partial** (npm v2/v3) |
-| Graph build | Full transitive tree | `graph/builder.jac` — 274 pkgs / 373 edges on drygate | **Done** |
-| Spawn | Parallel subtree per direct dep | `dep_graph_agent.jac` — up to **8** subtrees, **sequential** spawn | **Partial** |
-| NVD / Invoke | Per-node CVE via tools | `tools/cve_lookup.jac` → OSV primary, NVD fallback | **Done** |
-| Extract | AST → `UsageContext` | Schema only | **Not started** |
-| Route | LLM picks next neighbor, zero if/else | **Wired but not autonomous** — see §14 | **Partial / compromised** |
-| Spawn DeepDive | On critical CVE | Flag in reports only | **Not started** |
-| Loop | Remediation | Schema only | **Not started** |
-| Generate | Executive report | Event log + findings list | **Partial** |
-| Output | Graph canvas + JSON | Single-page text log | **Partial** |
+| Stage | Blueprint | Current | Status |
+|-------|-----------|---------|--------|
+| Input | GitHub URL or local path | GitHub URL only | **Partial** |
+| Ingest | Multi-ecosystem | npm: `package-lock.json` (primary) or `package.json` fallback via GitHub raw/API | **Partial** |
+| Graph build | Full transitive tree | `graph/builder.jac` + risk cap **200** packages (`risk_scorer.jac`) | **Done** (truncated on large repos) |
+| Extract | AST → `UsageContext` | GitHub search paths + `extract_usage_context` LLM → `UsageContext` node | **Partial** (no AST; path heuristics + LLM) |
+| Spawn | Parallel subtrees | LLM pool (Qwen2.5-7B) + risk fallback; **sequential** `spawn` | **Partial** |
+| Invoke | CVE tools per node | `cve_lookup.jac` → OSV primary, NVD fallback | **Done** |
+| Route | LLM next hop | Enriched prompt + CVSS fallback; requires **exactly one** index | **Partial** (works on juice-shop/CRA; still fails often) |
+| DeepDive | On critical CVE | `DeepDiveWalker` spawned from `SubtreeWalker` when CVSS ≥ 9 | **Partial** (runs; not fed back into Route) |
+| Loop | Remediation validation | `RemediationWalker` called; **no fixed versions from OSV** | **Mostly broken** |
+| Generate | Report + graph | LLM summary + `investigation_complete` + React Flow canvas | **Done** |
+| Live output | SSE / stream | In-memory session + **HTTP poll** every 500ms | **Partial** (not SSE) |
 
 ---
 
-## 2. Jac primitives (blueprint §5) — scorecard
+## 2. Repository file structure (important files only)
 
-| Primitive | Blueprint role | Implemented? | Where / notes |
-|-----------|----------------|--------------|---------------|
+```
+depgraph/
+├── main.jac                          # API walkers + legacy jac-client UI (`to cl:`)
+├── Implementation.md                 # This document
+├── README.md                         # Setup (ports 8001 / 5173)
+├── jac.toml                            # byllm / Featherless plugin config
+├── .env / .env.example                 # FEATHERLESS_API_KEY, GITHUB_TOKEN, NVD_API_KEY
+├── requirements.txt
+│
+├── graph/
+│   ├── nodes.jac                       # InvestigationSession, Package, CVE, UsageContext, RemediationPlan
+│   ├── edges.jac                       # DependsOn (typed; runtime often uses ++>)
+│   ├── builder.jac                     # Lockfile → Package nodes + edges in session
+│   └── snapshot_util.jac               # graph_snapshot payloads for frontend (severity, spawn roots)
+│
+├── walkers/
+│   ├── dep_graph_agent.jac             # Main orchestrator (ingest → extract → spawn → subtrees → remediate → report)
+│   ├── subtree_walker.jac              # OSV per visit, Route hop, DeepDive on critical
+│   ├── route_util.jac                  # choose_neighbor_indexes (DeepSeek), select_spawn_root_index (Qwen)
+│   ├── deep_dive_walker.jac            # Transitive OSV follow-up from critical package
+│   ├── extract_walker.jac              # extract_usage_context (Qwen Coder) — used by agent, not separate walker spawn
+│   ├── remediation_walker.jac          # remediation_plan events (needs fixed_version on CVEs)
+│   └── report_util.jac                 # generate_executive_summary (DeepSeek)
+│
+├── models/
+│   └── llm_config.jac                  # routing_llm, spawn_llm, code_llm (Featherless)
+│
+├── tools/
+│   ├── github_api.jac                  # Lockfile/package.json fetch; search_github_package_imports
+│   ├── lockfile_parser.jac             # npm lock v2/v3 + package.json; risk filter
+│   ├── osv_api.jac                     # OSV query (primary); fixed_version always "" today
+│   ├── nvd_api.jac                     # NVD fallback + cache
+│   ├── cve_lookup.jac                  # Unified OSV → NVD
+│   ├── risk_scorer.jac                 # Keyword/depth/direct scoring; top-N filter
+│   ├── env_util.jac                    # Dotenv helpers
+│   ├── jac_coerce.py                   # as_list / safe dict access from Jac
+│   ├── session_store.py                # In-memory session events (poll buffer)
+│   └── investigation_runner.py         # begin_async_investigation thread + poll_status
+│
+└── frontend/                           # Vite + React (primary demo UI)
+    ├── vite.config.js                  # Port 5173; proxy /walker → :8001
+    ├── package.json
+    ├── tailwind.config.js
+    ├── postcss.config.js
+    ├── index.html
+    └── src/
+        ├── main.jsx
+        ├── App.jsx                     # Router → Investigate page
+        ├── api.js                      # startInvestigationAsync, pollInvestigation, envelope parsing
+        ├── index.css
+        ├── pages/
+        │   └── Investigate.jsx         # Demo chips, poll loop, tabs (findings / summary / log)
+        ├── components/
+        │   ├── DependencyGraph.jsx     # React Flow + dagre layout, tooltips
+        │   ├── graphNodes.jsx          # RootNode + PackageNode custom nodes
+        │   ├── CVECard.jsx             # Finding cards (CVSS, deep-dive badge, fixed_version)
+        │   ├── ExecutiveSummary.jsx    # Markdown summary
+        │   ├── ActivityFeed.jsx        # Event log
+        │   ├── StatsBar.jsx            # Scanned / vulnerable / route counts
+        │   └── NodeTooltip.jsx         # Hover details on graph nodes
+        └── utils/
+            ├── eventProcessor.js       # applyEvent, normalizeFindings, stats, log formatting
+            └── severity.js             # CVSS → severity colors
+```
+
+**Not listed:** `.venv/`, `.jac/` cache, `node_modules/`, compiled jac-client bundles.
+
+---
+
+## 3. Jac primitives (blueprint §5)
+
+| Primitive | Blueprint role | Status | Where / honest notes |
+|-----------|----------------|--------|----------------------|
 | **Pipe** | Fetch → parse → graph | **Yes** | `github_api` → `lockfile_parser` → `builder` in `DepGraphAgent` |
-| **Extract** | AST → `UsageContext` | **No** | `graph/nodes.jac` only |
-| **Invoke** | APIs as LLM tools | **Partial** | Deterministic `requests` in `osv_api.jac`, `nvd_api.jac` — not `by llm(tools=[...])` |
-| **Route** | LLM picks next `Package` | **Partial** | `route_util.jac` + `subtree_walker.jac` — see §14 |
-| **Spawn** | Parallel subtrees + DeepDive | **Partial** | `SubtreeWalker() spawn pkg_node`; no DeepDive; not parallel |
-| **Loop** | Remediation until valid | **No** | — |
-| **Generate** | Executive summary | **No** | — |
-
-**Honestly demonstrated today:** Pipe, Invoke-like tooling (deterministic), Spawn (basic), Route (exists but weak).
+| **Extract** | Usage / reachability | **Partial** | `extract_walker.jac` + GitHub path search; not true AST |
+| **Invoke** | External CVE APIs | **Yes** | Deterministic `requests` in `osv_api` / `nvd_api` (not `by llm(tools=…)`) |
+| **Route** | LLM picks next package | **Partial** | Richer prompt in `route_util.jac`; CVSS fallback in `subtree_walker.jac` |
+| **Spawn** | Parallel subtrees + DeepDive | **Partial** | LLM spawn roots + risk pool; subtrees **sequential**; DeepDive on critical |
+| **Loop** | Remediation until valid | **No (practical)** | Walker exists; OSV never sets `fixed_version` → plans rarely emit |
+| **Generate** | Executive summary | **Yes** | `report_util.jac` + `investigation_complete` |
 
 ---
 
-## 3. Graph model (blueprint §7.1)
+## 4. Graph model
 
 ### Nodes (`graph/nodes.jac`)
 
-| Node | Status | Notes |
-|------|--------|-------|
-| `InvestigationSession` | **Yes** | Per-run anchor |
-| `Package` | **Mostly** | Fields exist; runtime mutation avoided |
-| `CVE` | **Partial** | Attached via `Package ++> CVE`; missing some blueprint fields |
-| `UsageContext` | **Schema only** | Never attached |
-| `RemediationPlan` | **Schema only** | Never attached |
+| Node | Runtime use |
+|------|-------------|
+| `InvestigationSession` | **Yes** — anchor per run |
+| `Package` | **Yes** — lockfile graph |
+| `CVE` | **Yes** — attached after OSV/NVD lookup |
+| `UsageContext` | **Yes** — attached to direct deps after Extract LLM |
+| `RemediationPlan` | **Schema only** — plans emitted as dict events, not this node type |
 
 ### Edges (`graph/edges.jac`)
 
-| Edge | Used? |
-|------|-------|
-| `DependsOn` | **Yes** — lockfile edges |
-| `HasCVE` / others | Declared; traversal uses `++>` not typed edges |
+| Edge | Status |
+|------|--------|
+| `DependsOn` | Declared; traversal uses generic `++>` from lockfile edges |
 
-### Builder (`graph/builder.jac`)
+### Builder & snapshot
 
-- drygate: **274 packages**, **373 edges** — verified.
+| Module | Role |
+|--------|------|
+| `graph/builder.jac` | Materialize `Package` nodes from parsed lockfile |
+| `graph/snapshot_util.jac` | `graph_snapshot` / `spawn_roots` JSON for React (severity, `is_spawn_root`, depth) |
 
----
-
-## 4. Walkers (blueprint §7.3)
-
-| Walker | File | Status |
-|--------|------|--------|
-| `DepGraphAgent` | `walkers/dep_graph_agent.jac` | **MVP** — ingest, graph, spawn subtrees, findings |
-| `SubtreeWalker` | `walkers/subtree_walker.jac` | **Partial** — OSV per visit + Route hop; capped |
-| `choose_neighbor_indexes` | `walkers/route_util.jac` | **Partial** — `by llm` returns `list[int]` |
-| `DeepDiveWalker` | — | **Not created** |
-| `RemediationWalker` | — | **Not created** |
-| `ReportWalker` | — | **Not created** |
-| `start_investigation` | `main.jac` | **Done** |
-
-### `DepGraphAgent` behavior (current)
-
-1. `InvestigationSession` + fetch lockfile + build graph.
-2. **Pre-spawns up to 8 `SubtreeWalker`s** on direct deps (`is_direct`, `depth <= 1`) — **before any LLM routing at orchestrator level**.
-3. Merges child `reports`; counts `nvd_lookup` for `packages_scanned`.
-4. `investigation_complete` with `findings[]`, `subtrees_spawned`, `packages_scanned`.
-
-### `SubtreeWalker` behavior (current)
-
-1. On each `Package` entry (up to `max_visits=5`, `depth_limit=3`):
-   - OSV lookup via `lookup_package_cves` → attach `CVE` nodes → `nvd_result` report.
-   - Build indexed neighbor list from `[here-->][?:Package]`.
-   - Call `choose_neighbor_indexes(descriptions)` → cap to **first valid index** → `visit` one neighbor.
-2. On LLM failure: `indexes: [0]`, `mode: fallback`.
-
-### Event protocol
-
-| Event | Meaning |
-|-------|---------|
-| `session_started` | Run began |
-| `lockfile_fetched` / `graph_built` | Ingest OK |
-| `nvd_lookup` / `nvd_result` | Per-package OSV (source field: `osv` / `nvd`) |
-| `route_decision` | About to call LLM for next hop |
-| `route_chosen` | `mode`: `llm` or `fallback`; `indexes`, `targets` |
-| `subtrees_spawned` | How many parallel walkers started |
-| `investigation_complete` | `packages_scanned` = OSV lookup count; `subtrees_spawned` = walker count |
+**Caps:** Large repos truncated to **200** packages via `filter_top_risk_packages` (not full lockfile on canvas).
 
 ---
 
-## 5. Tools & integrations
+## 5. Walkers (detailed)
 
-| Tool | File | Status |
-|------|------|--------|
-| OSV npm | `tools/osv_api.jac` | **Done** (primary) |
-| Unified lookup | `tools/cve_lookup.jac` | **Done** |
-| NVD | `tools/nvd_api.jac` | **Done** + cache |
-| GitHub lockfile | `tools/github_api.jac` | **Done** |
-| Lockfile parser | `tools/lockfile_parser.jac` | **Done** v2/v3 |
-| Env | `tools/env_util.jac` | **Done** |
-| Coerce | `tools/jac_coerce.py` | **Done** |
+### `DepGraphAgent` (`walkers/dep_graph_agent.jac`)
+
+**Flow:**
+
+1. `session_started` (+ `session_push` if `session_id` set).
+2. Fetch manifest (`lockfile_fetched`, `manifest_parsed`, `graph_built`).
+3. Emit initial `graph_snapshot` (all nodes, dep edges).
+4. For each **direct** dep (`depth <= 1`): GitHub import search → `extract_usage_context` → `usage_context` event → attach `UsageContext`.
+5. **Spawn selection:** Top-30 risk pool → iterative `select_spawn_root_index` (Qwen) with per-pick risk fallback → up to `max_direct_deps` (default 8).
+6. `spawn_roots` + second `graph_snapshot` (spawn flags).
+7. `spawn_chosen` (+ session push).
+8. For each spawn target: `SubtreeWalker` **sequentially**; child events `report` + `session_push`.
+9. Build `findings[]` from packages with CVEs (includes `deep_dive_triggered`, `fixed_version` from CVE nodes).
+10. `RemediationWalker` per vulnerable package (usually no-op — see §6).
+11. `report_generating` / `report_generated` / `investigation_complete` (+ session push).
+
+**Compromise:** Investigation breadth is still bounded by **8 spawn roots** and **sequential** subtrees, not blueprint “one agent discovers everything in parallel.”
+
+### `SubtreeWalker` (`walkers/subtree_walker.jac`)
+
+- Per visit: `nvd_lookup` → OSV/NVD → attach `CVE` → `nvd_result`.
+- If CVSS ≥ 9: spawn `DeepDiveWalker` on same package.
+- Route: `choose_neighbor_indexes` with current package, CVSS, critical flag, neighbor CVSS hints.
+- Accepts only **`len(raw_picks) == 1`** as LLM success; multi-index → `fallback_multi` then CVSS pick.
+- Fallback: `pick_highest_cvss_neighbor_index` (improved from always `[0]`).
+- Caps: `max_visits=5`, `depth_limit=3`.
+
+### `DeepDiveWalker` (`walkers/deep_dive_walker.jac`)
+
+- Spawned from subtree on critical finding.
+- Walks transitive deps (depth/visit caps), extra OSV lookups, `deep_dive` / `deep_dive_finding` / `deep_dive_complete` events.
+- **Gap:** Findings do not change next Route call (no `risk_signals` / `incl_info` loop).
+
+### `RemediationWalker` (`walkers/remediation_walker.jac`)
+
+- Emits `remediation_plan` (`from`, `to`, `confidence`, `status`) when CVEs have `fixed_version`.
+- **Gap:** `osv_api.jac` sets `fixed_version: ""` for every CVE → walker almost always `disengage`s.
+- **Gap:** `remediation_plan` not `session_push`ed (only `report`); frontend has no remediation panel.
+
+### `route_util.jac`
+
+| Function | Model | Purpose |
+|----------|-------|---------|
+| `choose_neighbor_indexes` | DeepSeek-V3 | Subtree next hop (enriched security prompt) |
+| `select_spawn_root_index` | Qwen2.5-7B | One spawn root per call (reliable JSON on long lists) |
+
+### `extract_walker.jac`
+
+- `extract_usage_context(package_name, importing_files) -> dict` by LLM (Qwen2.5-Coder-32B).
+- Used inline in agent (not spawned as separate walker graph).
+
+### `report_util.jac`
+
+- `generate_executive_summary` via DeepSeek-V3 from findings text.
+
+### API entrypoints (`main.jac`)
+
+| Walker | Purpose |
+|--------|---------|
+| `start_investigation` | Sync full run; optional `session_id` |
+| `start_investigation_async` | Returns `session_created` immediately; background thread calls sync walker |
+| `investigation_status` | Poll `{ events, status, next, total }` — **`can run`** (was `can poll`, caused long blocks) |
+
+### Legacy UI (`main.jac` `to cl:`)
+
+- Jac-client landing still compiled (~lines 61+): text log, findings string.
+- **Primary demo UI** is `frontend/` (React), not `http://localhost:8000/cl/app`.
+
+---
+
+## 6. Tools & integrations
+
+| File | Status | Notes |
+|------|--------|-------|
+| `tools/osv_api.jac` | **Done** | Primary CVE source; **does not parse patched versions** |
+| `tools/nvd_api.jac` | **Done** | Fallback + cache |
+| `tools/cve_lookup.jac` | **Done** | OSV then NVD |
+| `tools/github_api.jac` | **Done** | Raw lockfile URL + API fallback; `package.json` fallback; code search for imports |
+| `tools/lockfile_parser.jac` | **Done** | npm lock v2/v3 + shallow `package.json` |
+| `tools/risk_scorer.jac` | **Done** | Scoring + top-N filter for graph and spawn pool |
+| `tools/session_store.py` | **Done** | Thread-safe in-memory events |
+| `tools/investigation_runner.py` | **Done** | Async thread; no duplicate append at end |
+| `tools/env_util.jac` | **Done** | |
+| `tools/jac_coerce.py` | **Done** | |
 
 ### Environment
 
 | Variable | Purpose |
 |----------|---------|
-| `FEATHERLESS_API_KEY` | **Required** for Route |
-| `GITHUB_TOKEN` | Rate limits |
+| `FEATHERLESS_API_KEY` | **Required** for spawn, route, extract, summary |
+| `GITHUB_TOKEN` | Recommended (rate limits, code search) |
 | `NVD_API_KEY` | Optional NVD fallback |
 
 ---
 
-## 6. LLM / Featherless
+## 7. LLM / Featherless (`models/llm_config.jac`)
 
-| Item | File | Status |
-|------|------|--------|
-| `routing_llm`, `code_llm` | `models/llm_config.jac` | **Configured** — `featherless_ai/` prefix, `api_base` |
-| Default model | `jac.toml` `[plugins.byllm.model]` | DeepSeek-V3-0324 |
-| Route function | `walkers/route_util.jac` | `def choose_neighbor_indexes(...) -> list[int] by llm(model=routing_llm)` |
-| Route consumer | `walkers/subtree_walker.jac` | Lines 90–137 |
+| Global | Model | Used for |
+|--------|-------|----------|
+| `spawn_llm` | `featherless_ai/Qwen/Qwen2.5-7B-Instruct` | Spawn root index (JSON) |
+| `routing_llm` | `featherless_ai/deepseek-ai/DeepSeek-V3-0324` | Route + executive summary |
+| `code_llm` | `featherless_ai/Qwen/Qwen2.5-Coder-32B-Instruct` | Usage context extract |
 
-**Featherless integration is real** (LiteLLM logs show successful completion). **Routing intelligence is not** — see §14.
+Provider prefix **`featherless_ai/`** required for LiteLLM. Calls are real when `.env` is set; quality varies by repo size and prompt.
 
 ---
 
-## 7. Frontend (`main.jac` → `to cl:`)
+## 8. Frontend (React + Vite)
+
+**URL:** http://localhost:5173  
+**API proxy:** `/walker/*` → http://127.0.0.1:8001 (`vite.config.js`)
+
+### Implemented
+
+| Feature | File(s) | Status |
+|---------|---------|--------|
+| Repo input + demo chips (juice-shop, drygate, CRA) | `Investigate.jsx` | **Done** |
+| Async start + **500ms poll** | `api.js`, `Investigate.jsx` | **Done** |
+| React Flow dependency graph | `DependencyGraph.jsx`, `graphNodes.jsx` | **Done** |
+| Dagre layout, minimap, zoom/fit, visited-only toggle | `DependencyGraph.jsx` | **Done** |
+| Node types: root (depth 0), package (severity colors) | `graphNodes.jsx` | **Done** |
+| Edge styles: deps (gray), spawn (blue dashed), route (green), critical route (red) | `eventProcessor.js`, `DependencyGraph.jsx` | **Done** |
+| Hover tooltip | `NodeTooltip.jsx` | **Done** |
+| CVE findings panel | `CVECard.jsx` | **Done** |
+| Executive summary (markdown) | `ExecutiveSummary.jsx` | **Done** |
+| Activity log | `ActivityFeed.jsx`, `eventProcessor.js` | **Done** |
+| Stats bar | `StatsBar.jsx` | **Done** |
+| API envelope parsing (`data.reports`) | `api.js` | **Done** |
+
+### Not implemented / partial
 
 | Feature | Status |
 |---------|--------|
-| Repo input + Investigate | **Done** |
-| Activity log | **Done** — all report events |
-| Vulnerable packages panel | **Done** |
-| Live WebSocket / graph canvas | **Not built** |
+| Dedicated **remediation** tab or plan cards | **No** — only `fixed_version` on CVE card if present |
+| `usage_context` in UI | **No** — backend emits; log formatter doesn’t highlight |
+| `WalkerNode` floating agent dot | **No** — investigating state = pulse on package node |
+| True **SSE** | **No** — HTTP polling only |
+| Graph >200 nodes | **No** — backend truncates; UI shows capped snapshot |
+| Offline / sync-only mode button | **No** — always async path |
 
-### Client pitfalls (fixed)
+### Event handling (`eventProcessor.js`)
 
-- No `as_list()` or Python `.get()` in `to cl:` blocks.
-- Parse `result["reports"]` from spawn envelope.
-
-**Dev:** UI `http://localhost:8000/cl/app`, API `http://localhost:8001`.
-
----
-
-## 8. Repository layout
-
-```
-depgraph/
-├── main.jac
-├── walkers/
-│   ├── dep_graph_agent.jac   ✅ orchestrator (architectural compromise)
-│   ├── subtree_walker.jac    ✅ OSV + Route hops
-│   └── route_util.jac        ✅ by llm index picker (thin prompt)
-├── models/llm_config.jac       ✅ Featherless models
-├── tools/                      ✅ osv, nvd, github, lockfile, cve_lookup
-├── graph/                      ✅ nodes, edges, builder
-└── deep_dive / remediation / report walkers  ❌
-```
+Handles: `graph_snapshot`, `spawn_roots`, `nvd_lookup`, `nvd_result`, `route_chosen`, `deep_dive`, `investigation_complete`.  
+Does **not** mutate graph on: `usage_context`, `remediation_plan`, `spawn_chosen` (log only).
 
 ---
 
-## 9. Testing & verification (May 18)
+## 9. Live session architecture
+
+```
+Browser (5173)
+  POST /walker/start_investigation_async  →  session_id
+  loop: POST /walker/investigation_status { session_id, since }
+         ← { events[], status, next }
+
+Jac server (8001)
+  start_investigation_async → begin_async_investigation() [Python thread]
+    thread → POST /walker/start_investigation { session_id }
+      DepGraphAgent → session_push() on key events
+
+session_store.py (in-process memory)
+  append_event / get_events
+```
+
+**Limitations:**
+
+- Sessions are **in-memory** — lost on server restart.
+- Jac dev server appears **single-request blocked** during long investigations (port 8001 timeouts observed if a sync run is in flight).
+- Not all events are pushed (e.g. `remediation_plan`, manifest milestones).
+
+---
+
+## 10. Event protocol (reference)
+
+| Event | Source | Frontend graph |
+|-------|--------|----------------|
+| `session_started` / `session_created` | Agent / async API | No |
+| `lockfile_fetched`, `manifest_parsing`, `manifest_parsed`, `graph_built` | Agent | No |
+| `graph_snapshot` | Agent | **Yes** — full nodes/edges |
+| `usage_context` | Agent | No |
+| `spawn_decision`, `spawn_chosen`, `spawn_roots`, `spawn_llm_*` | Agent | Spawn edges from root |
+| `nvd_lookup`, `nvd_result` | Subtree | Node color / CVSS |
+| `route_decision`, `route_chosen` | Subtree | Green/red route edges |
+| `deep_dive`, `deep_dive_finding`, `deep_dive_complete` | DeepDive | Badge on findings |
+| `remediation_plan` | Remediation | **Rarely emitted** |
+| `report_generating`, `report_generated` | Agent | Summary tab |
+| `investigation_complete` | Agent | Findings + stats |
+| `error` | Any | Error banner |
+
+---
+
+## 11. Testing & verified demos
 
 | Test | Result |
 |------|--------|
-| `jac check main.jac graph tools walkers models` | **Passes** |
-| `shaileshdev4/drygate` E2E | **HTTP 200** — 0 CVEs (OSV clean), Route events fire |
-| Route on drygate root | LLM returned `[0..13]` once → **capped to first index** |
-| Many `route_chosen: fallback` | LLM parse fail or empty → index `0` |
+| `jac check` on project sources | Passes when run on `main.jac graph tools walkers models` (not whole tree with `.venv`) |
+| juice-shop | Spawn LLM + findings (axios, jsonwebtoken, etc.) |
+| drygate | Graph 200 nodes; OSV clean or low on many paths |
+| create-react-app | Spawn LLM picks; large graph truncated |
+| React UI + poll | Works when backend on **8001** and not blocked |
 
 ---
 
-## 10. Known limitations (honest)
+## 12. Known limitations (honest)
 
-1. **Not one autonomous agent** — 8 pre-spawned subtrees scan breadth; LLM only routes inside each subtree.
-2. **Route prompt is thin** — neighbor names only; no CVSS, no “pick one”, no usage context (§14).
-3. **Fallback is dumb** — always `[0]`, not BFS or highest-CVSS (blueprint §16 suggested BFS).
-4. **Hard caps** — `max_direct_deps=8`, `max_visits=5`, `depth_limit=3`.
-5. **No DeepDive** — critical CVE does not spawn deeper analysis.
-6. **No graph viz / live stream** — text log only.
-7. **Sequential spawn** — not parallel `Spawn` demo.
-
----
-
-## 11. Risk mitigation (blueprint §16)
-
-| Risk | Blueprint | Current |
-|------|-----------|---------|
-| NVD rate limit | Key + cache | **Done** |
-| LLM bad routing | BFS fallback | **Index `[0]` fallback** — weaker than BFS |
-| Walker too slow | depth/time limits | **Aggressive caps** for demo |
-| Demo failure | Deterministic core | OSV path is reliable |
+1. **Not one autonomous agent** — spawn picks up to 8 roots; subtrees run sequentially with hard visit/depth caps.
+2. **Graph truncation** — 200 package cap hides most of CRA-sized lockfiles.
+3. **Route still fails often** — multi-index LLM output → fallback; `max_tokens=16` on route is tight.
+4. **DeepDive doesn’t steer Route** — critical findings don’t change `choose_neighbor_indexes` inputs on next hop.
+5. **Remediation non-functional in practice** — no OSV `fixed_version` parsing; no UI for plans.
+6. **Extract is shallow** — GitHub search + LLM on paths, not AST/call graph.
+7. **No true parallel Spawn** — Jac `spawn` subtrees one after another.
+8. **Live session fragile** — in-memory; server blocking; no SSE.
+9. **Two UIs** — legacy `to cl:` in `main.jac` vs React (React is the demo path).
+10. **Invoke not LLM-mediated** — deterministic HTTP, not tool-calling agent pattern from blueprint.
 
 ---
 
-## 12. What is next? (prioritized)
+## 13. What is compromised vs blueprint (summary)
 
-### P0 — Make Route credible (2–4 h)
+| Area | What we shipped | What blueprint wanted |
+|------|-----------------|------------------------|
+| **Orchestration** | Risk-ranked spawn pool + 8 subtrees | Single walker; LLM-driven scope |
+| **Route** | Separate `def by llm`; single-index enforcement | `visit by llm(incl_info=…)` with accumulated risk |
+| **Spawn** | Qwen iterative picks (fixed empty-JSON issue) | Parallel spawn of all direct deps |
+| **Extract** | Path list + LLM label | Full AST extract |
+| **Loop** | Walker shell only | Validated upgrade loop with breaking-change checks |
+| **Output** | React Flow + poll | SSE + full graph without cap |
 
-1. **Richer Route prompt** — pass `current_package`, `max_cvss`, `cve_count`, instruction; use `incl_info` or expand `choose_neighbor_indexes` inputs.
-2. **CVSS-aware fallback** — if LLM fails, pick neighbor with highest known CVSS (or first unvisited), not always index 0.
-3. **Single-root mode (optional flag)** — one `SubtreeWalker` from app root; LLM routes entire investigation (matches blueprint narrative).
-4. **Few-shot examples** in `route_util.jac` for `[3]` style outputs.
-
-### P1 — Hackathon polish
-
-5. DeepDiveWalker stub on `critical: true`.
-6. ReportWalker + `routing_llm` summary.
-7. WebSocket/SSE live log.
-8. Demo repo with known CVEs in lockfile.
-
-### P2 — Post-hackathon
-
-9. Remediation Loop, AST Extract, graph canvas, true parallel spawn.
+**Pitch-safe wording:** *“LLM-assisted dependency investigation with risk-ranked spawn, OSV-driven traversal, critical-path deep dive, and a live graph UI — with deterministic fallbacks and demo caps.”*  
+**Avoid claiming:** fully autonomous Ponita-style routing, working remediation loop, or complete lockfile coverage.
 
 ---
 
-## 13. Quick reference commands
+## 14. Route & spawn — technical honesty (updated)
 
-```bash
-cd "/d/Hackathons/Jac Hacks/depgraph"
-source .venv/Scripts/activate
-export PYTHONIOENCODING=utf-8
+### 14.1 Spawn (improved since May 18 AM)
+
+**Files:** `dep_graph_agent.jac`, `route_util.jac`, `models/llm_config.jac`
+
+- **Was:** Batch `select_spawn_root_indexes` → empty JSON on large repos (CRA).
+- **Now:** Top-30 risk pool; **one index per LLM call** (`select_spawn_root_index`); Qwen2.5-7B; risk fallback per failed pick; `spawn_llm_partial` events.
+- **Still compromised:** Max 8 roots; sequential subtrees; not parallel.
+
+### 14.2 Route (improved but partial)
+
+**Files:** `route_util.jac`, `subtree_walker.jac`
+
+- **Improved:** Prompt includes current package, CVSS, critical flag, neighbor CVSS; fallback = highest-CVSS neighbor.
+- **Still:** Only accepts exactly one LLM index; `max_tokens=16`; DeepDive findings not passed into next route call.
+- **Modes observed:** `llm`, `fallback`, `fallback_multi`.
+
+### 14.3 Architectural gap (unchanged in spirit)
+
+The orchestrator still **pre-selects investigation targets** (spawn roots) before subtrees explore. The LLM does not decide global investigation strategy—only local next hops and spawn picks from a risk-trimmed pool.
+
+---
+
+## 15. What is next? (prioritized)
+
+### P0 — Demo reliability
+
+1. Parse OSV `affected` / ranges → populate `fixed_version` on CVE nodes.
+2. `session_push` for `remediation_plan` + frontend remediation cards.
+3. Ensure `jac start --dev --port 8001` doesn’t block poll during long runs (worker/process model).
+
+### P1 — Blueprint fidelity
+
+4. Feed `deep_dive` / `usage_context` into Route `incl_info`.
+5. Optional true SSE endpoint.
+6. Parallel subtree spawn where runtime allows.
+
+### P2 — Polish
+
+7. `usage_context` panel in UI.
+8. Walker agent node on graph during `nvd_lookup`.
+9. Remove or gate legacy `to cl:` UI to avoid confusion.
+
+---
+
+## 16. Quick reference commands
+
+```powershell
+cd "d:\Hackathons\Jac Hacks\depgraph"
+.\.venv\Scripts\Activate.ps1
+$env:PYTHONIOENCODING = "utf-8"
+
+# Type-check project sources only
 jac check main.jac graph tools walkers models
-jac start --dev
-# UI: http://localhost:8000/cl/app
+
+# Backend (API for React)
+jac start --dev --port 8001
+
+# Frontend
+cd frontend
+npm install
+npm run dev
+# → http://localhost:5173
 ```
 
----
-
-## 14. Why Route is NOT truly autonomous (detailed, honest)
-
-Blueprint definition (§5, §7.3, Ponita/Sanjay criteria):
-
-- **One walker** discovers the graph; at each node the **LLM decides the next hop** from accumulated risk (CVSS, usage, critical findings).
-- **`visit [-->] by llm(incl_info={...})`** — zero if/else in routing; path changes based on what was found.
-- **Spawn DeepDive** when critical CVE found — investigation deepens autonomously.
-
-What we built instead is a **hybrid**: deterministic breadth at the top + weak LLM hops below. That is **not** the same as blueprint autonomy.
+Legacy Jac UI (if enabled by jac-client): http://localhost:8000/cl/app — **not** the primary graph demo.
 
 ---
 
-### 14.1 Architectural issue (biggest) — `dep_graph_agent.jac`
-
-**File:** `walkers/dep_graph_agent.jac` lines **69–87**
-
-```jac
-for pkg_node in [session-->][?:Package] {
-    if pkg_node.is_direct and pkg_node.depth <= 1 {
-        if spawned >= self.max_direct_deps { break; }
-        subtree = SubtreeWalker(...) spawn pkg_node;
-        ...
-    }
-}
-```
-
-**Exact issue:** The orchestrator **pre-decides** to investigate up to **8 direct dependencies** before any LLM sees the graph. The LLM never chooses *which direct deps matter* — we take the first 8 in graph iteration order.
-
-**Blueprint expected:** Start from one entry (or session root), Route picks which subtree to enter, Spawn specialists when critical findings appear.
-
-**Compromise:** We traded “autonomous path selection” for “demo coverage” (scan multiple top-level deps quickly).
-
----
-
-### 14.2 Prompt / context issue — `route_util.jac`
-
-**File:** `walkers/route_util.jac` (entire file, ~10 lines)
-
-```jac
-def choose_neighbor_indexes(neighbor_descriptions: str) -> list[int] by llm(
-    model=routing_llm,
-    temperature=0,
-    max_tokens=16
-);
-```
-
-**Exact issues:**
-
-| Gap | Detail |
-|-----|--------|
-| **Input is only neighbor list text** | Built in `subtree_walker.jac` lines 73–79 as `0) pkg@ver\n1) ...` — no current package name, no OSV results, no CVSS, no “pick exactly one index”. |
-| **No `incl_info`** | Blueprint `visit by llm` used `incl_info={ current_package, current_cvss, accumulated_risk, instruction }`. We dropped all of that when we moved off `visit ... by llm` to a standalone `def`. |
-| **`max_tokens=16`** | Very tight; may truncate or produce malformed JSON on larger neighbor lists. |
-| **byllm auto-prompt** | `by llm` on `def` generates prompt from function docstring + type hints. Our function has **no per-parameter semantic descriptions** (Jac disallows `[3]` in quoted types — parser breaks). So the model gets minimal guidance. |
-
-**Observed LLM behavior (drygate terminal, May 18):**
-
-```
-route_chosen: mode=llm, indexes=[0,1,2,...,13], targets=all 14 direct deps
-```
-
-The model did **not** understand “return one index”. It listed every neighbor. We **cap to first index** in `subtree_walker.jac` lines 106–118 — so we **discard** any ranking the model might have intended.
-
----
-
-### 14.3 Consumer / fallback issue — `subtree_walker.jac`
-
-**File:** `walkers/subtree_walker.jac`
-
-| Lines | Issue |
-|-------|--------|
-| **67** | `neighbor_list = [here-->][?:Package]` — all outgoing package edges (can be large; not “direct deps only”). |
-| **90–104** | `try/except` + empty check → `pick_indexes = [0]`, `mode = fallback`. |
-| **106–118** | Cap LLM output to **first valid index only** — necessary hack after model returns full range; **not** blueprint Route. |
-| **10–11** | `max_visits=5`, `depth_limit=3` — hard stop; agent cannot explore deep chains. |
-
-**Exact issue on fallback:** When LLM fails (common on single-neighbor nodes in drygate log: `ansi-styles`, `color-convert`, `anymatch`, `asn1`), we always pick **index 0**. That is **not** risk-based and **not** BFS. Blueprint §16 said “if Route returns empty, default to BFS” — we did not implement BFS.
-
----
-
-### 14.4 Missing feedback loop — no `DeepDiveWalker`, no `risk_signals`
-
-**Files missing:** `walkers/deep_dive_walker.jac`, usage in `subtree_walker.jac`
-
-**Blueprint** (`DEPGRAPH_BLUEPRINT.md` ~337–344): On `cvss >= 9.0`, spawn `DeepDiveWalker` and accumulate `risk_signals` for Route.
-
-**Exact issue:** `subtree_walker.jac` sets `has_critical = True` in reports but **never** changes routing inputs. The LLM on the next hop still only sees neighbor names — it cannot “prioritize the critical subtree” because we never pass that signal.
-
----
-
-### 14.5 Original `visit by llm` failure (why we changed approach)
-
-**Previous code (removed):** `visit [-->][?:Package] by llm(model=routing_llm, incl_info={...})`
-
-**Failure:** `OutputConversionError: Failed to convert LLM output to 'list'` — DeepSeek returned prose/markdown instead of JSON `[0]`.
-
-**Fix path:** Explicit `def choose_neighbor_indexes -> list[int] by llm` + try/catch + cap.
-
-**Tradeoff:** We fixed **reliability** but lost **`filter_visitable_by`’s built-in docstring** (“return indexes in priority order”) and **`incl_info`** from the visit site unless we re-add it to the `def` call.
-
-Reference implementation: `jaseci/jac/jaclang/jac0core/impl/runtime.impl.jac` `JacByLLM.filter_visitable_by` — expects `list[int]` JSON indexes over `_describe_nodes_list` output.
-
----
-
-### 14.6 Config files (not the blocker)
-
-| File | Role | Autonomy impact |
-|------|------|-----------------|
-| `models/llm_config.jac` | `routing_llm` Model + `call_params` | **OK** — API works |
-| `jac.toml` | `featherless_ai/...`, `api_base` | **OK** — was broken with `featherless/` prefix; fixed |
-| `.env` | `FEATHERLESS_API_KEY` | **OK** if set |
-
-**LLM calls do run.** The problem is **what we send** and **what we do with the response**, not Featherless connectivity.
-
----
-
-### 14.7 Summary table — file → responsibility → exact gap
-
-| File | Responsibility | Why it blocks “autonomous” |
-|------|----------------|---------------------------|
-| `dep_graph_agent.jac` | Orchestration | Spawns 8 subtrees upfront; LLM does not choose investigation scope |
-| `route_util.jac` | Route LLM call | No risk context, no “one index” instruction, tiny token budget |
-| `subtree_walker.jac` | OSV + Route hop | Caps multi-index to first; dumb `[0]` fallback; visit/depth caps |
-| `models/llm_config.jac` | Model config | Fine — not the issue |
-| `main.jac` | UI | Displays events; does not affect autonomy |
-| *missing* `deep_dive_walker.jac` | Critical-path depth | No spawn-on-critical; Route has no exploitability signal |
-| *missing* `usage` / Extract | Auth vs build-time | Cannot prioritize “qs in route handler” story |
-
----
-
-### 14.8 What “autonomous” would require (minimal credible fix)
-
-1. **Orchestrator:** Either single `SubtreeWalker` from session root **or** LLM picks which direct deps get a subtree (not first-8 loop).
-2. **`route_util.jac`:** Add parameters: `current_name`, `current_cvss`, `cve_summary`, `instruction`; add `incl_info` few-shots `[[0], [2], [1]]`; raise `max_tokens` to ~64.
-3. **`subtree_walker.jac`:** On fallback, pick unvisited neighbor with max CVSS (or BFS queue), not `[0]`.
-4. **On critical:** `DeepDiveWalker spawn here` and append to `risk_signals` passed into next Route call.
-5. **Optional:** Restore `visit ... by llm` once prompt/schema stable, with same `incl_info` as blueprint.
-
-Until (1)–(3) are done, **do not claim full autonomous Route in the pitch** — say “LLM-assisted traversal with deterministic fallbacks and parallel subtree scans.”
-
----
-
-*Update this document after each milestone. Section §14 is the source of truth for Route honesty.*
+*Update this file after each milestone. §13–§14 are the source of truth for hackathon pitch honesty.*
