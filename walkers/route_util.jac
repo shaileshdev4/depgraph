@@ -1,6 +1,6 @@
 """LLM routing — return exactly one neighbor index as JSON, e.g. [3]."""
 
-import from models.llm_config { routing_llm }
+import from models.llm_config { routing_llm, spawn_llm }
 
 """Security dependency investigator. Given the current package state and its
 neighbors, return a JSON list with EXACTLY ONE integer index — the neighbor
@@ -18,14 +18,14 @@ def choose_neighbor_indexes(
     max_tokens=64
 );
 
-"""Pick which direct dependency indexes get deep subtree investigation.
-Return JSON array of indexes, e.g. [2, 7, 4, 38]. Up to 8 indexes.
-Prioritize auth, crypto, network, parse, and packages with known CVE history."""
-def select_spawn_root_indexes(
-    candidate_descriptions: str,
-    pick_count: int
+"""Pick ONE direct dependency index from the numbered candidate list.
+Return ONLY a JSON array with a single integer, e.g. [3] or [0].
+Prioritize auth, jwt, crypto, parse, network, and serialize packages.
+No prose, no markdown."""
+def select_spawn_root_index(
+    candidate_descriptions: str
 ) -> list[int] by llm(
-    model=routing_llm,
+    model=spawn_llm,
     temperature=0,
-    max_tokens=64
+    max_tokens=32
 );

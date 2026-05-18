@@ -22,3 +22,13 @@ glob routing_llm = Model(
     },
     call_params={"temperature": 0, "max_tokens": 48}
 );
+
+"""Spawn root selection — reliable JSON on long package lists (not reasoning)."""
+glob spawn_llm = Model(
+    model_name="featherless_ai/Qwen/Qwen2.5-7B-Instruct",
+    config={
+        "api_base": "https://api.featherless.ai/v1",
+        "http_client": True
+    },
+    call_params={"temperature": 0, "max_tokens": 64}
+);
