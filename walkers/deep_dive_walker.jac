@@ -12,6 +12,7 @@ walker DeepDiveWalker {
     has max_depth: int = 3;
     has visit_count: int = 0;
     has findings: list[dict] = [];
+    has transitive_findings: list[dict] = [];
     has reported_start: bool = False;
 
     can analyze with Package entry {
@@ -71,6 +72,14 @@ walker DeepDiveWalker {
                         "max_cvss": max_cvss,
                         "top_cve": top_cve,
                         "depth": here.depth
+                    }
+                );
+                self.transitive_findings.append(
+                    {
+                        "package": here.name,
+                        "version": here.version,
+                        "cvss": max_cvss,
+                        "cve_id": top_cve
                     }
                 );
                 report {

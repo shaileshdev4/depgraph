@@ -3,30 +3,26 @@
 import from models.llm_config { routing_llm, spawn_llm }
 
 """Security dependency investigator routing decision.
-You are investigating a dependency graph for vulnerabilities.
-Current package: {current_package} version {current_version}
-Current package CVEs found: {cve_count} (max CVSS: {current_cvss})
-Critical CVE found on current package: {has_critical}
+Current package: {current_package}@{current_version}
+CVEs found on current package: {cve_count} (max CVSS: {current_cvss})
+Critical CVE on current package: {has_critical}
+{critical_context}
 
-Neighbors to choose from:
+Neighbors to investigate next:
 {neighbor_descriptions}
 
-Return EXACTLY ONE index as JSON array.
-Prioritize:
-1. Packages with known CVE history (jwt, serialize, eval, xml, yaml, crypto)
-2. Network/auth/crypto packages over utility packages
-3. Older major versions (0.x, 1.x) over recent ones
-4. Packages with many dependents
-
-Example outputs: [3] or [0] or [7]
-Never return more than one index."""
+Return EXACTLY ONE index as a JSON array.
+If transitive critical findings exist above, prioritize packages
+in the same ecosystem (auth, crypto, network).
+Examples: [3] or [0] or [7]"""
 def choose_neighbor_indexes(
     current_package: str,
     current_version: str,
     cve_count: int,
     current_cvss: float,
     has_critical: bool,
-    neighbor_descriptions: str
+    neighbor_descriptions: str,
+    critical_context: str
 ) -> list[int] by llm(
     model=routing_llm,
     temperature=0,
