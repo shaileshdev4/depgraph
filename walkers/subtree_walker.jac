@@ -3,6 +3,7 @@
 import from graph.nodes { Package, CVE }
 import from tools.cve_lookup { lookup_package_cves }
 import from tools.jac_coerce { as_list }
+import from tools.risk_scorer { package_risk_score }
 import from walkers.deep_dive_walker { DeepDiveWalker }
 import from walkers.route_util { choose_neighbor_indexes }
 
@@ -16,14 +17,24 @@ def neighbor_max_cvss(pkg_node: Package) -> float {
     return best;
 }
 
-def pick_highest_cvss_neighbor_index(neighbor_list: list[Package]) -> int {
+def pick_best_fallback_index(neighbor_list: list[Package]) -> int {
     best_idx = 0;
-    best_cvss = -1.0;
+    best_score = -1.0;
     idx = 0;
     for pkg_node in neighbor_list {
-        pkg_cvss = neighbor_max_cvss(pkg_node);
-        if pkg_cvss > best_cvss {
-            best_cvss = pkg_cvss;
+        score = neighbor_max_cvss(pkg_node);
+        if score <= 0.0 {
+            score = float(
+                package_risk_score(
+                    pkg_node.name,
+                    pkg_node.version,
+                    pkg_node.depth,
+                    pkg_node.is_direct
+                )
+            ) / 100.0;
+        }
+        if score > best_score {
+            best_score = score;
             best_idx = idx;
         }
         idx += 1;
@@ -37,6 +48,7 @@ walker SubtreeWalker {
     has visit_count: int = 0;
     has osv_lookup_count: int = 0;
     has reports: list[dict] = [];
+    has critical_findings: list[dict] = [];
 
     can scan with Package entry {
         if here.depth > self.depth_limit {
@@ -91,6 +103,9 @@ walker SubtreeWalker {
             for entry in dive.reports {
                 report entry;
             }
+            for finding in dive.transitive_findings {
+                self.critical_findings.append(finding);
+            }
         }
 
         report {
@@ -132,9 +147,21 @@ walker SubtreeWalker {
             "message": "LLM selecting next dependency to investigate"
         };
 
-        fallback_idx = pick_highest_cvss_neighbor_index(neighbor_list);
+        fallback_idx = pick_best_fallback_index(neighbor_list);
         pick_indexes: list[int] = [fallback_idx];
         route_mode = "fallback";
+
+        critical_context = "";
+        if self.critical_findings {
+            critical_context = "TRANSITIVE CRITICAL FINDINGS: ";
+            for f in self.critical_findings {
+                pkg_name = str(f["package"]);
+                cvss_val = f["cvss"];
+                critical_context = (
+                    f"{critical_context}{pkg_name} CVSS {cvss_val}, "
+                );
+            }
+        }
 
         try {
             raw_picks = choose_neighbor_indexes(
@@ -143,7 +170,8 @@ walker SubtreeWalker {
                 len(cves),
                 max_cvss,
                 has_critical,
-                descriptions
+                descriptions,
+                critical_context
             );
             if raw_picks and len(raw_picks) == 1 {
                 only = raw_picks[0];
