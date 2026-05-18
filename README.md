@@ -31,16 +31,16 @@ Open http://localhost:8000/cl/app (Jac CL UI) **or** the React graph UI below.
 **Vite** (not CRA) — fast dev server, proxies walker API to Jac.
 
 ```powershell
-# Terminal 1 — backend
-jac start --dev
+# Terminal 1 — backend (port 8001)
+jac start --dev --port 8001
 
-# Terminal 2 — frontend
+# Terminal 2 — frontend (port 5173)
 cd frontend
 npm install
 npm run dev
 ```
 
-Open http://localhost:5173 — investigation path graph, CVE cards, activity log.
+Open http://localhost:5173 — full graph canvas, CVE cards, executive summary, live event replay.
 
 | Model | Task |
 |-------|------|
