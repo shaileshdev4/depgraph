@@ -139,8 +139,10 @@ walker SubtreeWalker {
         try {
             raw_picks = choose_neighbor_indexes(
                 here.name,
-                max_cvss,
+                here.version,
                 len(cves),
+                max_cvss,
+                has_critical,
                 descriptions
             );
             if raw_picks and len(raw_picks) == 1 {
