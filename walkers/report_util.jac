@@ -1,6 +1,7 @@
 """Executive summary generation for investigation results."""
 
 import from models.llm_config { routing_llm }
+import from tools.summary_util { sanitize_executive_summary }
 
 """Write a concise executive summary (markdown) for a dependency security investigation.
 Repository: {repo_url}
@@ -25,26 +26,6 @@ def generate_executive_summary(
     temperature=0.2,
     max_tokens=256
 );
-
-def sanitize_executive_summary(text: str) -> str {
-    import re;
-    out = str(text);
-    if not out {
-        return "";
-    }
-    out = re.sub(
-        r'\[([^\]]+)\]\(mailto:[^)]*\)',
-        r'`\1`',
-        out,
-        flags=re.IGNORECASE
-    );
-    out = re.sub(
-        r'\[([^\]]+@[^\]]+)\]\([^)]*\)',
-        r'`\1`',
-        out
-    );
-    return out;
-}
 
 def generate_executive_summary_safe(
     repo_url: str,

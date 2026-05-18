@@ -1,6 +1,7 @@
 """Usage context attachment and exploitability helpers."""
 
 import from graph.nodes { Package, UsageContext }
+import from graph.edges { DependsOn }
 import from tools.github_api { search_github_package_imports }
 import from tools.jac_coerce { as_list }
 import from walkers.extract_walker { classify_usage_from_paths }
@@ -40,7 +41,7 @@ def package_has_usage_context(pkg_node: Package) -> bool {
 def inherit_usage_from_importers(
     pkg_node: Package,
     session_packages: list[Package]
-) -> dict | None {
+) -> dict {
     found_prod = False;
     found_test = False;
     inherited_from: list[str] = [];
@@ -79,7 +80,7 @@ def inherit_usage_from_importers(
             "inherited_from": inherited_from
         };
     }
-    return None;
+    return {};
 }
 
 def refresh_findings_usage(
@@ -98,8 +99,12 @@ def refresh_findings_usage(
             }
             surface = package_usage_surface(pkg_node);
             item["usage_surface"] = surface;
+            cvss_val = 0.0;
+            if "max_cvss" in item {
+                cvss_val = float(str(item["max_cvss"]));
+            }
             item["exploitability"] = compute_exploitability(
-                float(item["max_cvss"]),
+                cvss_val,
                 surface
             );
             import_count = 0;
@@ -114,8 +119,11 @@ def refresh_findings_usage(
                     pkg_node,
                     session_packages
                 );
-                if inherited and "inherited_from" in inherited {
-                    item["usage_inherited_from"] = inherited["inherited_from"];
+                if "surface" in inherited and "inherited_from" in inherited {
+                    raw_from = inherited["inherited_from"];
+                    if isinstance(raw_from, list) {
+                        item["usage_inherited_from"] = raw_from;
+                    }
                 }
             }
             break;
@@ -141,10 +149,12 @@ def attach_usage_context_for_package(
             pkg_node,
             session_packages
         );
-        if inherited {
+        if inherited and "surface" in inherited {
             ctx = inherited;
             if "inherited_from" in inherited {
-                inherited_from = inherited["inherited_from"];
+                for nm in as_list(inherited["inherited_from"]) {
+                    inherited_from.append(str(nm));
+                }
             }
         } else {
             ctx = {
