@@ -72,7 +72,10 @@ walker:pub DepGraphAgent {
                 if spawned >= self.max_direct_deps {
                     break;
                 }
-                subtree = SubtreeWalker() spawn pkg_node;
+                subtree = SubtreeWalker(
+                    depth_limit=3,
+                    max_visits=5
+                ) spawn pkg_node;
                 for entry in subtree.reports {
                     report entry;
                 }
@@ -81,7 +84,10 @@ walker:pub DepGraphAgent {
         }
         if spawned == 0 {
             for pkg_node in [session-->][?:Package] {
-                subtree = SubtreeWalker() spawn pkg_node;
+                subtree = SubtreeWalker(
+                    depth_limit=3,
+                    max_visits=5
+                ) spawn pkg_node;
                 for entry in subtree.reports {
                     report entry;
                 }

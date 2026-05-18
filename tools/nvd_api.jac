@@ -22,6 +22,22 @@ def _severity_from_score(score: float) -> str {
     return "UNKNOWN";
 }
 
+def _cve_text_matches_package(text: str, package_name: str) -> bool {
+    if not text {
+        return False;
+    }
+    lower_text = text.lower();
+    pkg = package_name.lower();
+    if pkg in lower_text {
+        return True;
+    }
+    npm_needle = f"npm:{pkg}";
+    if npm_needle in lower_text {
+        return True;
+    }
+    return False;
+}
+
 def nvd_search_cve(package_name: str, version: str = "") -> list[dict] {
     cache_key = f"{package_name.lower()}@{version}";
     if cache_key in nvd_cache {
@@ -37,12 +53,9 @@ def nvd_search_cve(package_name: str, version: str = "") -> list[dict] {
     if api_key {
         headers["apiKey"] = api_key;
     }
-    query = package_name;
-    if version {
-        query = f"{package_name} {version}";
-    }
+    query = f"npm {package_name}";
     url = "https://services.nvd.nist.gov/rest/json/cves/2.0";
-    params = {"keywordSearch": query, "resultsPerPage": 15};
+    params = {"keywordSearch": query, "resultsPerPage": 20};
     resp = requests.get(url, params=params, headers=headers, timeout=45);
     if resp.status_code != 200 {
         return [];
@@ -74,13 +87,17 @@ def nvd_search_cve(package_name: str, version: str = "") -> list[dict] {
                 break;
             }
         }
+        if not _cve_text_matches_package(desc, package_name) {
+            continue;
+        }
         results.append(
             {
                 "cve_id": cve_id,
                 "cvss_score": score,
                 "severity": _severity_from_score(score),
                 "description": desc[:500],
-                "fixed_version": ""
+                "fixed_version": "",
+                "source": "nvd"
             }
         );
     }

@@ -142,7 +142,9 @@ Per Package: [INVOKE] NVD  [EXTRACT] usage  [ROUTE] next node
 
 | Tool | Blueprint | File | Status |
 |------|-----------|------|--------|
-| `nvd_search_cve` | NVD REST | `tools/nvd_api.jac` | **Done** + in-memory **`nvd_cache`** |
+| `osv_query_npm` | OSV per npm version | `tools/osv_api.jac` | **Done** (primary for npm) |
+| `lookup_package_cves` | Unified lookup | `tools/cve_lookup.jac` | **Done** — OSV first, empty if clean |
+| `nvd_search_cve` | NVD REST | `tools/nvd_api.jac` | **Done** + cache + description filter |
 | `nvd_get_cvss` | Per-CVE detail | — | **Not split** (score parsed in search) |
 | `github_fetch_file` | Raw file fetch | `tools/github_api.jac` | **Done** (Contents API + base64) |
 | `github_search_code` | Code search | — | **Not started** |

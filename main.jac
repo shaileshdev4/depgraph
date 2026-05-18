@@ -62,12 +62,18 @@ def:pub app -> JsxElement {
                     ev = str(row["event"]);
                 }
                 line = f"- {ev}";
-                if ev == "nvd_result" {
-                    pkg = str(row["package"]) if "package" in row else "?";
-                    cnt = row["cve_count"] if "cve_count" in row else 0;
-                    cvss = row["max_cvss"] if "max_cvss" in row else 0.0;
-                    line = f"- {ev}: {pkg} ({cnt} CVEs, max CVSS {cvss})";
-                }
+                    if ev == "nvd_result" {
+                        pkg = str(row["package"]) if "package" in row else "?";
+                        cnt = row["cve_count"] if "cve_count" in row else 0;
+                        cvss = row["max_cvss"] if "max_cvss" in row else 0.0;
+                        src = str(row["source"]) if "source" in row else "osv";
+                        line = f"- {ev}: {pkg} ({cnt} CVEs, max CVSS {cvss}, {src})";
+                    }
+                    if ev == "route_decision" {
+                        pkg = str(row["package"]) if "package" in row else "?";
+                        nbr = row["neighbor_count"] if "neighbor_count" in row else 0;
+                        line = f"- {ev}: from {pkg} → LLM picks 1 of {nbr} deps";
+                    }
                 if ev == "investigation_complete" {
                     vuln = (
                         row["vulnerable_count"]
