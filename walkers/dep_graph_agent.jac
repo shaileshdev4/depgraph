@@ -15,11 +15,12 @@ import from tools.github_api {
 import from tools.jac_coerce { as_list }
 import from tools.lockfile_parser { parse_npm_lockfile, parse_npm_package_json }
 import from tools.risk_scorer { package_risk_score }
-import from walkers.extract_walker { extract_usage_context }
+import from walkers.extract_walker { classify_usage_from_paths }
 import from walkers.remediation_walker { RemediationWalker }
 import from walkers.report_util { generate_executive_summary }
 import from walkers.route_util { select_spawn_root_index }
 import from walkers.subtree_walker { SubtreeWalker }
+import from tools.investigation_runner { session_push }
 
 def _spawn_roots_fallback(candidates: list[Package], pick_count: int) -> list[Package] {
     if len(candidates) <= pick_count {
@@ -76,6 +77,7 @@ walker:pub DepGraphAgent {
     has max_direct_deps: int = 8;
     has max_graph_packages: int = 200;
     has max_spawn_llm_pool: int = 30;
+    has session_id: str = "";
     has reports: list[dict] = [];
 
     can start with Root entry {
@@ -88,14 +90,35 @@ walker:pub DepGraphAgent {
         report {
             "event": "session_started",
             "repo_url": self.repo_url,
-            "ecosystem": self.ecosystem
+            "ecosystem": self.ecosystem,
+            "session_id": self.session_id
         };
+        if self.session_id {
+            session_push(
+                self.session_id,
+                {
+                    "event": "session_started",
+                    "repo_url": self.repo_url,
+                    "ecosystem": self.ecosystem,
+                    "session_id": self.session_id
+                }
+            );
+        }
 
         if self.ecosystem != "npm" {
             report {
                 "event": "error",
                 "message": "Only npm is supported in this MVP"
             };
+            if self.session_id {
+                session_push(
+                    self.session_id,
+                    {
+                        "event": "error",
+                        "message": "Only npm is supported in this MVP"
+                    }
+                );
+            }
             disengage;
         }
 
@@ -178,40 +201,42 @@ walker:pub DepGraphAgent {
             "package_count": pkg_count,
             "edge_count": edge_cnt
         };
+        if self.session_id {
+            session_push(
+                self.session_id,
+                {
+                    "event": "graph_snapshot",
+                    "nodes": snapshot["nodes"],
+                    "edges": snapshot["edges"],
+                    "package_count": pkg_count,
+                    "edge_count": edge_cnt
+                }
+            );
+        }
 
-        owner_name = str(manifest_result["owner"]);
-        repo_name = str(manifest_result["repo"]);
         for pkg_node in session_packages {
             if not pkg_node.is_direct or pkg_node.depth > 1 {
                 continue;
             }
-            paths = search_github_package_imports(
-                owner_name,
-                repo_name,
-                pkg_node.name
-            );
-            path_text = "";
-            for p in paths {
-                path_text = f"{path_text}{p}\n";
+            paths = search_github_package_imports(self.repo_url, pkg_node.name);
+            if not paths {
+                ctx = {
+                    "surface": "unknown",
+                    "is_prod": False,
+                    "importing_file_count": 0,
+                    "importing_files": [],
+                };
+            } else {
+                ctx = classify_usage_from_paths(pkg_node.name, paths);
             }
-            if not path_text {
-                path_text = "(no import paths found via GitHub search)";
-            }
-            usage_summary = "unknown";
-            is_prod = True;
-            try {
-                ctx = extract_usage_context(pkg_node.name, path_text);
-                if ctx and "risk_surface" in ctx {
-                    usage_summary = str(ctx["risk_surface"]);
-                }
-                if ctx and "is_reachable_in_prod" in ctx {
-                    is_prod = bool(ctx["is_reachable_in_prod"]);
-                }
-            } except Exception {
-                usage_summary = "unknown";
+            usage_surface = str(ctx["surface"]);
+            is_prod = bool(ctx["is_prod"]);
+            import_files = ctx["importing_files"];
+            if not isinstance(import_files, list) {
+                import_files = paths[0:6];
             }
             usage_node = UsageContext(
-                risk_surface=usage_summary,
+                risk_surface=usage_surface,
                 is_reachable_in_prod=is_prod,
                 called_from_modules=paths
             );
@@ -220,9 +245,13 @@ walker:pub DepGraphAgent {
                 "event": "usage_context",
                 "package": pkg_node.name,
                 "version": pkg_node.version,
-                "risk_surface": usage_summary,
+                "surface": usage_surface,
+                "risk_surface": usage_surface,
+                "is_prod": is_prod,
                 "is_reachable_in_prod": is_prod,
-                "import_file_count": len(paths)
+                "importing_file_count": ctx["importing_file_count"],
+                "importing_files": import_files,
+                "import_file_count": ctx["importing_file_count"]
             };
         }
 
@@ -369,6 +398,15 @@ walker:pub DepGraphAgent {
             "event": "spawn_roots",
             "roots": spawn_root_ids
         };
+        if self.session_id {
+            session_push(
+                self.session_id,
+                {
+                    "event": "spawn_roots",
+                    "roots": spawn_root_ids
+                }
+            );
+        }
         report {
             "event": "graph_snapshot",
             "nodes": snapshot_after["nodes"],
@@ -376,6 +414,18 @@ walker:pub DepGraphAgent {
             "package_count": pkg_count,
             "edge_count": edge_cnt
         };
+        if self.session_id {
+            session_push(
+                self.session_id,
+                {
+                    "event": "graph_snapshot",
+                    "nodes": snapshot_after["nodes"],
+                    "edges": snapshot_after["edges"],
+                    "package_count": pkg_count,
+                    "edge_count": edge_cnt
+                }
+            );
+        }
 
         report {
             "event": "spawn_chosen",
@@ -385,6 +435,19 @@ walker:pub DepGraphAgent {
             "llm_picks": llm_spawn_picks,
             "risk_picks": spawn_llm_failures
         };
+        if self.session_id {
+            session_push(
+                self.session_id,
+                {
+                    "event": "spawn_chosen",
+                    "mode": spawn_mode,
+                    "targets": spawned_names.strip(),
+                    "count": len(spawn_targets),
+                    "llm_picks": llm_spawn_picks,
+                    "risk_picks": spawn_llm_failures
+                }
+            );
+        }
 
         spawned = 0;
         lookup_count = 0;
@@ -399,6 +462,9 @@ walker:pub DepGraphAgent {
             sub_lookups = subtree.osv_lookup_count;
             for entry in subtree.reports {
                 report entry;
+                if self.session_id {
+                    session_push(self.session_id, entry);
+                }
                 if "event" in entry {
                     ev_name = str(entry["event"]);
                     if ev_name == "route_chosen" {
@@ -530,5 +596,25 @@ walker:pub DepGraphAgent {
             "findings": findings,
             "executive_summary": summary
         };
+        if self.session_id {
+            session_push(
+                self.session_id,
+                {
+                    "event": "investigation_complete",
+                    "packages_scanned": lookup_count,
+                    "packages_in_graph": pkg_count,
+                    "subtrees_spawned": spawned,
+                    "vulnerable_count": len(findings),
+                    "critical_count": critical_count,
+                    "spawn_mode": spawn_mode,
+                    "route_llm_count": route_llm_count,
+                    "route_fallback_count": route_fallback_count,
+                    "truncated": truncated,
+                    "original_package_count": original_cnt,
+                    "findings": findings,
+                    "executive_summary": summary
+                }
+            );
+        }
     }
 }

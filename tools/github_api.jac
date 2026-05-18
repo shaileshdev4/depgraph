@@ -220,42 +220,45 @@ def fetch_github_npm_manifest(repo_url: str) -> dict {
     };
 }
 
-def search_github_package_imports(
-    owner: str,
-    repo: str,
-    package_name: str,
-    token: str = ""
-) -> list[str] {
+def search_github_package_imports(repo_url: str, package_name: str) -> list[str] {
+    ensure_dotenv_loaded();
+    import os;
     import requests;
 
-    ensure_dotenv_loaded();
-    if not token {
-        import os;
-        token = os.environ.get("GITHUB_TOKEN", "");
+    parsed = parse_github_repo_url(repo_url);
+    if not parsed["ok"] {
+        return [];
     }
-    headers = _github_headers(token);
-    q = f"repo:{owner}/{repo} {package_name} import";
+    owner = str(parsed["owner"]);
+    repo = str(parsed["repo"]);
+
+    token = os.environ.get("GITHUB_TOKEN", "");
+    if not token {
+        return [];
+    }
+
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "Authorization": f"Bearer {token}",
+    };
+
+    query = f'"{package_name}" repo:{owner}/{repo}';
     url = "https://api.github.com/search/code";
+    params = {"q": query, "per_page": 10};
+
     try {
-        resp = requests.get(
-            url,
-            headers=headers,
-            params={"q": q, "per_page": 8},
-            timeout=30
-        );
+        resp = requests.get(url, headers=headers, params=params, timeout=15);
         if resp.status_code != 200 {
             return [];
         }
-        data = resp.json();
-        paths: list[str] = [];
-        items = data.get("items", []);
+        items = resp.json().get("items", []);
         if not isinstance(items, list) {
             return [];
         }
+        paths: list[str] = [];
         for item in items {
-            if isinstance(item, dict) and "path" in item {
+            if isinstance(item, dict) and item.get("path") {
                 paths.append(str(item["path"]));
-            }
         }
         return paths;
     } except Exception {
