@@ -7,12 +7,11 @@ import from graph.snapshot_util {
     pkg_node_id,
     severity_from_cvss
 }
-import from tools.github_api {
-    fetch_github_npm_manifest,
-    parse_github_repo_url
-}
 import from tools.jac_coerce { as_list }
-import from tools.lockfile_parser { parse_npm_lockfile, parse_npm_package_json }
+import from tools.manifest_resolver {
+    fetch_ecosystem_manifest,
+    parse_ecosystem_manifest
+}
 import from tools.risk_scorer { package_risk_score }
 import from walkers.remediation_walker { RemediationWalker }
 import from walkers.report_util { generate_executive_summary_safe }
@@ -110,28 +109,30 @@ walker:pub DepGraphAgent {
             );
         }
 
-        if self.ecosystem != "npm" {
-            report {
-                "event": "error",
-                "message": "Only npm is supported in this MVP"
-            };
+        manifest_result = fetch_ecosystem_manifest(
+            self.repo_url,
+            self.ecosystem
+        );
+        if not manifest_result["ok"] {
+            err_msg = str(manifest_result.get("error", "manifest fetch failed"));
+            report {"event": "error", "message": err_msg};
             if self.session_id {
                 session_push(
                     self.session_id,
-                    {
-                        "event": "error",
-                        "message": "Only npm is supported in this MVP"
-                    }
+                    {"event": "error", "message": err_msg}
                 );
             }
             disengage;
         }
 
-        manifest_result = fetch_github_npm_manifest(self.repo_url);
-        if not manifest_result["ok"] {
-            report {"event": "error", "message": manifest_result["error"]};
-            disengage;
+        active_ecosystem = self.ecosystem;
+        if "ecosystem" in manifest_result {
+            active_ecosystem = str(manifest_result["ecosystem"]);
         }
+        if active_ecosystem == "auto" {
+            active_ecosystem = "npm";
+        }
+        session.ecosystem = active_ecosystem;
 
         manifest_kind = str(manifest_result.get("manifest_kind", "lockfile"));
         report {
@@ -139,23 +140,36 @@ walker:pub DepGraphAgent {
             "owner": manifest_result["owner"],
             "repo": manifest_result["repo"],
             "filename": manifest_result["filename"],
-            "manifest_kind": manifest_kind
+            "manifest_kind": manifest_kind,
+            "ecosystem": active_ecosystem
         };
+        if self.session_id {
+            session_push(
+                self.session_id,
+                {
+                    "event": "lockfile_fetched",
+                    "owner": manifest_result["owner"],
+                    "repo": manifest_result["repo"],
+                    "filename": manifest_result["filename"],
+                    "manifest_kind": manifest_kind,
+                    "ecosystem": active_ecosystem
+                }
+            );
+        }
 
         manifest_text: str = str(manifest_result["text"]);
         report {
             "event": "manifest_parsing",
             "filename": manifest_result["filename"],
-            "bytes": len(manifest_text)
+            "bytes": len(manifest_text),
+            "ecosystem": active_ecosystem
         };
-        if manifest_kind == "package_json" {
-            parsed = parse_npm_package_json(manifest_text);
-        } else {
-            parsed = parse_npm_lockfile(
-                manifest_text,
-                max_packages=self.max_graph_packages
-            );
-        }
+        parsed = parse_ecosystem_manifest(
+            manifest_text,
+            active_ecosystem,
+            manifest_kind,
+            self.max_graph_packages
+        );
         if not parsed["ok"] {
             report {"event": "error", "message": parsed["error"]};
             disengage;
@@ -433,7 +447,8 @@ walker:pub DepGraphAgent {
                 max_visits=5,
                 session_id=self.session_id,
                 repo_url=self.repo_url,
-                session_packages=session_packages
+                session_packages=session_packages,
+                ecosystem=active_ecosystem
             ) spawn pkg_node;
             sub_lookups = subtree.osv_lookup_count;
             for entry in subtree.reports {

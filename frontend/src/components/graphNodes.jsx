@@ -1,5 +1,5 @@
 import { Handle, Position } from "@xyflow/react";
-import { SEVERITY_COLORS } from "../utils/severity";
+import { SEVERITY_COLORS, severityFromCvss } from "../utils/severity";
 
 export function RootNodeView({ data }) {
   return (
@@ -69,20 +69,23 @@ export function RootNodeView({ data }) {
 }
 
 export function PackageNodeView({ data }) {
-  const sev = data.severity || "CLEAN";
+  const hasCVE = (data.cve_count || 0) > 0;
+  const cvss = Number(data.cvss_score || 0);
+  const sev =
+    cvss > 0 ? severityFromCvss(cvss) : data.severity || "CLEAN";
   let palette = SEVERITY_COLORS[sev] || SEVERITY_COLORS.CLEAN;
 
-  if (data.isSpawnRoot && (sev === "CLEAN" || sev === "LOW")) {
-    palette = SEVERITY_COLORS.SPAWN;
-  }
-  if (data.visited && sev === "CLEAN" && !data.isSpawnRoot) {
-    palette = SEVERITY_COLORS.VISITED;
+  // CVE / CVSS severity always wins over spawn or visited styling
+  if (!hasCVE && cvss < 4) {
+    if (data.isSpawnRoot && (sev === "CLEAN" || sev === "LOW")) {
+      palette = SEVERITY_COLORS.SPAWN;
+    } else if (data.visited && sev === "CLEAN" && !data.isSpawnRoot) {
+      palette = SEVERITY_COLORS.VISITED;
+    }
   }
 
   const label =
     data.name?.length > 22 ? `${data.name.slice(0, 20)}…` : data.name;
-  const hasCVE = (data.cve_count || 0) > 0;
-  const cvss = Number(data.cvss_score || 0);
 
   const boxShadow = data.investigating
     ? `0 0 0 3px rgba(6,182,212,0.7), 0 0 20px rgba(6,182,212,0.5), ${palette.glow}`

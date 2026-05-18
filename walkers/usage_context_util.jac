@@ -143,7 +143,11 @@ def attach_usage_context_for_package(
     paths = search_github_package_imports(repo_url, pkg_node.name);
     inherited_from: list[str] = [];
     if paths {
-        ctx = classify_usage_from_paths(pkg_node.name, paths);
+        ctx = classify_usage_from_paths(
+            pkg_node.name,
+            paths,
+            pkg_node.ecosystem
+        );
     } else {
         inherited = inherit_usage_from_importers(
             pkg_node,

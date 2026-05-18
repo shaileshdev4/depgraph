@@ -13,7 +13,7 @@ import dagre from "@dagrejs/dagre";
 import { graphNodeTypes } from "./graphNodes";
 import GraphHUD from "./GraphHUD";
 import NodeTooltip from "./NodeTooltip";
-import { SEVERITY_COLORS } from "../utils/severity";
+import { SEVERITY_COLORS, severityFromCvss } from "../utils/severity";
 
 // ── layout ──────────────────────────────────────────────────────────────────
 
@@ -98,6 +98,7 @@ function styledRouteEdge(e, hotEdges, now) {
     const stroke = isCritical ? "#ff2d55" : "#00ff88";
     return {
       ...e,
+      type: "default",
       animated: true,
       style: {
         stroke,
@@ -117,6 +118,7 @@ function styledRouteEdge(e, hotEdges, now) {
     const stroke = isCritical ? "#ef4444" : "#22c55e";
     return {
       ...e,
+      type: "default",
       animated: true,
       style: {
         stroke,
@@ -126,7 +128,21 @@ function styledRouteEdge(e, hotEdges, now) {
       markerEnd: { type: "arrowclosed", color: stroke },
     };
   }
-  return { ...e, ...edgeProps(e.type) };
+  return { ...e, type: "default", ...edgeProps(e.type) };
+}
+
+function buildFlowEdges(graphState, nodeIds, hotEdges, now) {
+  const validEdge = (e) => nodeIds.has(e.source) && nodeIds.has(e.target);
+  const depEdges = graphState.edges
+    .filter(validEdge)
+    .map((e) => ({ ...e, type: "default", ...edgeProps("depends_on") }));
+  const spawnEdges = graphState.spawnEdges
+    .filter(validEdge)
+    .map((e) => ({ ...e, type: "default", ...edgeProps(e.type) }));
+  const routeEdges = graphState.routeEdges
+    .filter(validEdge)
+    .map((e) => styledRouteEdge(e, hotEdges, now));
+  return [...depEdges, ...spawnEdges, ...routeEdges];
 }
 
 export default function DependencyGraph({
@@ -144,16 +160,21 @@ export default function DependencyGraph({
   const [tipPos, setTipPos] = useState({ x: 0, y: 0 });
   const [hotEdgeAge, setHotEdgeAge] = useState(0);
   const containerRef = useRef(null);
-  const layoutRequested = useRef(false);
+  const lastStructureSig = useRef("");
+  const didFitView = useRef(false);
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      if (graphState.hotEdges?.size > 0) {
-        setHotEdgeAge(Date.now());
-      }
-    }, 150);
+    if (graphState.nodes.size === 0) {
+      didFitView.current = false;
+      lastStructureSig.current = "";
+    }
+  }, [graphState.nodes.size]);
+
+  useEffect(() => {
+    if (!running || !graphState.hotEdges?.size) return undefined;
+    const interval = setInterval(() => setHotEdgeAge(Date.now()), 200);
     return () => clearInterval(interval);
-  }, [graphState.hotEdges]);
+  }, [running, graphState.hotEdges]);
 
   const visibleNodes = useMemo(() => {
     const list = [...graphState.nodes.values()];
@@ -162,6 +183,34 @@ export default function DependencyGraph({
       (n) => n.visited || n.isSpawnRoot || n.kind === "root" || n.investigating
     );
   }, [graphState.nodes, showVisitedOnly]);
+
+  const structureSig = useMemo(() => {
+    const ids = visibleNodes
+      .map((n) => n.id)
+      .sort()
+      .join("|");
+    const dep = graphState.edges.map((e) => e.id).join(",");
+    const spawn = graphState.spawnEdges.map((e) => e.id).join(",");
+    const route = graphState.routeEdges.map((e) => e.id).join(",");
+    return `${ids}::${dep}::${spawn}::${route}::${showVisitedOnly}`;
+  }, [
+    visibleNodes,
+    graphState.edges,
+    graphState.spawnEdges,
+    graphState.routeEdges,
+    showVisitedOnly,
+  ]);
+
+  const nodeDataSig = useMemo(
+    () =>
+      visibleNodes
+        .map(
+          (n) =>
+            `${n.id}:${n.severity}:${n.cvss_score}:${n.visited}:${n.investigating}:${n.cve_count}:${n.isSpawnRoot}`
+        )
+        .join("|"),
+    [visibleNodes]
+  );
 
   useEffect(() => {
     const flowNodes = visibleNodes.map((n) => ({
@@ -172,23 +221,8 @@ export default function DependencyGraph({
     }));
 
     const nodeIds = new Set(flowNodes.map((n) => n.id));
-
-    const validEdge = (e) => nodeIds.has(e.source) && nodeIds.has(e.target);
-
-    const depEdges = graphState.edges
-      .filter(validEdge)
-      .map((e) => ({ ...e, ...edgeProps("depends_on") }));
-
-    const spawnEdges = graphState.spawnEdges
-      .filter(validEdge)
-      .map((e) => ({ ...e, ...edgeProps(e.type) }));
-
     const now = hotEdgeAge || Date.now();
-    const routeEdges = graphState.routeEdges
-      .filter(validEdge)
-      .map((e) => styledRouteEdge(e, graphState.hotEdges, now));
-
-    const allEdges = [...depEdges, ...spawnEdges, ...routeEdges];
+    const allEdges = buildFlowEdges(graphState, nodeIds, graphState.hotEdges, now);
 
     if (flowNodes.length === 0) {
       setNodes([]);
@@ -196,25 +230,36 @@ export default function DependencyGraph({
       return;
     }
 
-    const laid = layoutGraph(flowNodes, allEdges);
-    setNodes(laid);
-    setEdges(allEdges);
+    const structureChanged = structureSig !== lastStructureSig.current;
 
-    // Fit after layout settles
-    layoutRequested.current = true;
-    setTimeout(() => {
-      if (layoutRequested.current) {
-        rf?.fitView({ padding: 0.18, duration: 400 });
-        layoutRequested.current = false;
+    if (structureChanged) {
+      const laid = layoutGraph(flowNodes, allEdges);
+      setNodes(laid);
+      setEdges(allEdges);
+      lastStructureSig.current = structureSig;
+      if (!didFitView.current) {
+        setTimeout(() => {
+          rf?.fitView({ padding: 0.18, duration: 400 });
+          didFitView.current = true;
+        }, 120);
       }
-    }, 120);
+      return;
+    }
+
+    setNodes((prev) => {
+      const posById = new Map(prev.map((n) => [n.id, n.position]));
+      return flowNodes.map((n) => ({
+        ...n,
+        position: posById.get(n.id) ?? n.position,
+      }));
+    });
+    setEdges(allEdges);
   }, [
-    visibleNodes,
-    graphState.edges,
-    graphState.spawnEdges,
-    graphState.routeEdges,
-    graphState.hotEdges,
+    structureSig,
+    nodeDataSig,
     hotEdgeAge,
+    visibleNodes,
+    graphState,
     setNodes,
     setEdges,
     rf,
@@ -421,7 +466,6 @@ export default function DependencyGraph({
         onNodeMouseEnter={onNodeMouseEnter}
         onNodeMouseLeave={onNodeMouseLeave}
         nodeTypes={graphNodeTypes}
-        fitView
         minZoom={0.04}
         maxZoom={2.5}
         proOptions={{ hideAttribution: true }}
@@ -444,9 +488,15 @@ export default function DependencyGraph({
         />
         <MiniMap
           nodeColor={(n) => {
-            const sev = n.data?.severity || "CLEAN";
+            const cvss = Number(n.data?.cvss_score || 0);
+            const hasCVE = (n.data?.cve_count || 0) > 0;
+            if (hasCVE || cvss >= 4) {
+              const sev = cvss > 0 ? severityFromCvss(cvss) : n.data?.severity || "CLEAN";
+              return SEVERITY_COLORS[sev]?.border || SEVERITY_COLORS.CLEAN.border;
+            }
             if (n.data?.isSpawnRoot) return SEVERITY_COLORS.SPAWN.border;
-            return SEVERITY_COLORS[sev]?.border || SEVERITY_COLORS.CLEAN.border;
+            if (n.data?.visited) return SEVERITY_COLORS.VISITED.border;
+            return SEVERITY_COLORS.CLEAN.border;
           }}
           maskColor="rgba(5,9,18,0.88)"
           style={{

@@ -277,13 +277,23 @@ export function applySnapshot(state, snapshot) {
   const next = { ...state, nodes: new Map(state.nodes) };
   for (const n of snapshot.nodes || []) {
     const kind = n.depth === 0 ? "root" : "package";
+    const existing = state.nodes.get(n.id);
+    const incomingCvss = Number(n.cvss_score || 0);
+    const existingCvss = Number(existing?.cvss_score || 0);
+    const cvss = Math.max(incomingCvss, existingCvss);
+    const cveCount = Math.max(Number(n.cve_count || 0), Number(existing?.cve_count || 0));
     next.nodes.set(n.id, {
       ...n,
       kind,
-      visited: false,
-      investigating: false,
-      isSpawnRoot: n.is_spawn_root || false,
-      severity: n.severity || severityFromCvss(n.cvss_score || 0),
+      visited: existing?.visited ?? false,
+      investigating: existing?.investigating ?? false,
+      isSpawnRoot: n.is_spawn_root || existing?.isSpawnRoot || false,
+      cvss_score: cvss,
+      cve_count: cveCount,
+      critical: existing?.critical ?? false,
+      severity: severityFromCvss(cvss),
+      usage_surface: existing?.usage_surface ?? n.usage_surface,
+      usage_is_prod: existing?.usage_is_prod ?? n.usage_is_prod,
     });
   }
   const depEdges = (snapshot.edges || []).map((e, i) => ({

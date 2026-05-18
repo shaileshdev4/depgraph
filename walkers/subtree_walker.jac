@@ -77,6 +77,7 @@ walker SubtreeWalker {
     has session_id: str = "";
     has repo_url: str = "";
     has session_packages: list = [];
+    has ecosystem: str = "npm";
     has reports: list[dict] = [];
     has critical_findings: list[dict] = [];
 
@@ -99,7 +100,7 @@ walker SubtreeWalker {
         report nvd_lookup_evt;
         push_live_event(self.session_id, nvd_lookup_evt);
 
-        cves = lookup_package_cves(here.name, here.version, "npm");
+        cves = lookup_package_cves(here.name, here.version, self.ecosystem);
         max_cvss = 0.0;
         has_critical = False;
         top_cve_id = "";
@@ -134,7 +135,8 @@ walker SubtreeWalker {
                 target_name=here.name,
                 target_version=here.version,
                 cve_id=top_cve_id,
-                cvss_score=max_cvss
+                cvss_score=max_cvss,
+                ecosystem=self.ecosystem
             ) spawn here;
             for entry in dive.reports {
                 report entry;

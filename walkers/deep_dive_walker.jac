@@ -8,6 +8,7 @@ walker DeepDiveWalker {
     has target_version: str;
     has cve_id: str;
     has cvss_score: float = 0.0;
+    has ecosystem: str = "npm";
     has max_visits: int = 10;
     has max_depth: int = 3;
     has visit_count: int = 0;
@@ -46,7 +47,7 @@ walker DeepDiveWalker {
         }
 
         if here.name != self.target_name {
-            cves = lookup_package_cves(here.name, here.version, "npm");
+            cves = lookup_package_cves(here.name, here.version, self.ecosystem);
             max_cvss = 0.0;
             top_cve = "";
             for cve_data in cves {

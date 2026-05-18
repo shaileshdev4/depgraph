@@ -1,9 +1,11 @@
 """OSV.dev vulnerability lookup (accurate per ecosystem + version)."""
 
+import from tools.ecosystem_util { osv_ecosystem_for }
 import from tools.env_util { ensure_dotenv_loaded }
 import from tools.jac_coerce { as_list }
 
 sem osv_query_npm = "Query OSV for npm package@version; returns normalized CVE dicts.";
+sem osv_query_ecosystem = "Query OSV for any supported DepGraph ecosystem.";
 
 glob osv_cache: dict[str, list[dict]] = {};
 
@@ -71,8 +73,12 @@ def _extract_fixed_version(item: dict) -> str {
     return "";
 }
 
-def osv_query_npm(package_name: str, version: str) -> list[dict] {
-    cache_key = f"npm:{package_name.lower()}@{version}";
+def _osv_query_raw(
+    package_name: str,
+    version: str,
+    osv_ecosystem: str
+) -> list[dict] {
+    cache_key = f"{osv_ecosystem}:{package_name.lower()}@{version}";
     if cache_key in osv_cache {
         return osv_cache[cache_key];
     }
@@ -82,7 +88,7 @@ def osv_query_npm(package_name: str, version: str) -> list[dict] {
 
     url = "https://api.osv.dev/v1/query";
     payload = {
-        "package": {"name": package_name, "ecosystem": "npm"},
+        "package": {"name": package_name, "ecosystem": osv_ecosystem},
         "version": version
     };
     resp = requests.post(url, json=payload, timeout=30);
@@ -177,4 +183,17 @@ def osv_query_npm(package_name: str, version: str) -> list[dict] {
     }
     osv_cache[cache_key] = results;
     return results;
+}
+
+def osv_query_npm(package_name: str, version: str) -> list[dict] {
+    return _osv_query_raw(package_name, version, "npm");
+}
+
+def osv_query_ecosystem(
+    package_name: str,
+    version: str,
+    depgraph_ecosystem: str
+) -> list[dict] {
+    osv_eco = osv_ecosystem_for(depgraph_ecosystem);
+    return _osv_query_raw(package_name, version, osv_eco);
 }

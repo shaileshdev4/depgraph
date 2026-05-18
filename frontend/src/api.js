@@ -26,10 +26,10 @@ export function extractPollSnapshot(payload) {
   return payload;
 }
 
-export async function startInvestigationAsync(repoUrl) {
+export async function startInvestigationAsync(repoUrl, ecosystem = "auto") {
   const { data } = await client.post("/walker/start_investigation_async", {
     repo_url: repoUrl.trim(),
-    ecosystem: "npm",
+    ecosystem: ecosystem || "auto",
     max_direct_deps: 8,
   });
   if (data?.ok === false || data?.error) {
@@ -52,10 +52,10 @@ export async function pollInvestigation(sessionId, since = 0) {
 }
 
 /** Sync fallback — blocks until complete */
-export async function startInvestigation(repoUrl, sessionId = "") {
+export async function startInvestigation(repoUrl, sessionId = "", ecosystem = "auto") {
   const { data } = await client.post("/walker/start_investigation", {
     repo_url: repoUrl.trim(),
-    ecosystem: "npm",
+    ecosystem: ecosystem || "auto",
     max_direct_deps: 8,
     session_id: sessionId,
   });

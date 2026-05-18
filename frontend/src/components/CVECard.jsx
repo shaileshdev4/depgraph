@@ -9,7 +9,7 @@ const EXPLOITABILITY_STYLE = {
   LOW: { color: "#64748b", bg: "rgba(100,116,139,0.12)", border: "rgba(100,116,139,0.3)" },
 };
 
-function exploitabilityVerdict(exploitability, cvss, usageSurface) {
+function exploitabilityVerdict(exploitability, cvss, usageSurface, inheritedFrom) {
   const exp = String(exploitability || "MEDIUM").toUpperCase();
   const surface = String(usageSurface || "unknown").toLowerCase();
   const surfaceLabel =
@@ -23,8 +23,8 @@ function exploitabilityVerdict(exploitability, cvss, usageSurface) {
       ? "mixed prod+test"
       : "usage unknown";
   const via =
-    finding.usage_inherited_from?.length > 0
-      ? ` (reachable via ${finding.usage_inherited_from.join(", ")})`
+    inheritedFrom?.length > 0
+      ? ` (reachable via ${inheritedFrom.join(", ")})`
       : "";
   return {
     exp,
@@ -39,7 +39,8 @@ export default function CVECard({ finding }) {
   const verdict = exploitabilityVerdict(
     finding.exploitability,
     cvss,
-    finding.usage_surface
+    finding.usage_surface,
+    finding.usage_inherited_from
   );
   const expStyle = EXPLOITABILITY_STYLE[verdict.exp] || EXPLOITABILITY_STYLE.MEDIUM;
   const cveLink = finding.top_cve

@@ -14,6 +14,7 @@ from tools.session_store import (
     get_events,
     session_push,
 )
+from tools.summary_util import sanitize_executive_summary  # re-exported in __all__
 
 _API = "http://127.0.0.1:8001/walker/start_investigation"
 _TIMEOUT = 900
@@ -92,4 +93,5 @@ __all__ = [
     "create_session",
     "append_event",
     "finish_session",
+    "sanitize_executive_summary",
 ]

@@ -38,8 +38,12 @@ def _cve_text_matches_package(text: str, package_name: str) -> bool {
     return False;
 }
 
-def nvd_search_cve(package_name: str, version: str = "") -> list[dict] {
-    cache_key = f"{package_name.lower()}@{version}";
+def nvd_search_cve(
+    package_name: str,
+    version: str = "",
+    ecosystem: str = "npm"
+) -> list[dict] {
+    cache_key = f"{ecosystem}:{package_name.lower()}@{version}";
     if cache_key in nvd_cache {
         return nvd_cache[cache_key];
     }
@@ -53,7 +57,16 @@ def nvd_search_cve(package_name: str, version: str = "") -> list[dict] {
     if api_key {
         headers["apiKey"] = api_key;
     }
-    query = f"npm {package_name}";
+    eco = str(ecosystem).lower();
+    if eco == "pypi" {
+        query = f"python {package_name}";
+    } elif eco == "go" {
+        query = f"go {package_name}";
+    } elif eco == "maven" {
+        query = f"maven {package_name}";
+    } else {
+        query = f"npm {package_name}";
+    }
     url = "https://services.nvd.nist.gov/rest/json/cves/2.0";
     params = {"keywordSearch": query, "resultsPerPage": 20};
     resp = requests.get(url, params=params, headers=headers, timeout=45);

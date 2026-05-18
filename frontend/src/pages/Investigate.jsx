@@ -15,10 +15,35 @@ import {
   normalizeUsageContexts,
 } from "../utils/eventProcessor";
 
+const ECOSYSTEMS = [
+  { id: "auto", label: "Auto-detect" },
+  { id: "npm", label: "npm" },
+  { id: "pypi", label: "PyPI" },
+  { id: "go", label: "Go" },
+  { id: "maven", label: "Maven" },
+];
+
 const DEMOS = [
-  { label: "drygate", url: "https://github.com/shaileshdev4/drygate" },
-  { label: "juice-shop", url: "https://github.com/juice-shop/juice-shop" },
-  { label: "CRA", url: "https://github.com/react/create-react-app" },
+  {
+    label: "drygate",
+    url: "https://github.com/shaileshdev4/drygate",
+    ecosystem: "npm",
+  },
+  {
+    label: "juice-shop",
+    url: "https://github.com/juice-shop/juice-shop",
+    ecosystem: "npm",
+  },
+  {
+    label: "flask",
+    url: "https://github.com/pallets/flask",
+    ecosystem: "pypi",
+  },
+  {
+    label: "gin",
+    url: "https://github.com/gin-gonic/gin",
+    ecosystem: "go",
+  },
 ];
 
 const POLL_MS = 500;
@@ -28,7 +53,7 @@ const LOG_MAX_HEIGHT_DONE = 320;
 const MONO = "'JetBrains Mono', 'Fira Code', monospace";
 
 const STEPS = [
-  "Fetches your package-lock.json and builds a risk-scored dependency graph",
+  "Fetches lockfiles (npm, Poetry, go.mod, Gradle, …) and builds a risk-scored graph",
   "LLM selects the highest-risk packages for investigation",
   "Walker agents traverse the graph, calling OSV for real CVE data",
   "Critical findings trigger deep-dive investigation of transitive dependencies",
@@ -80,6 +105,7 @@ function SectionHeader({ title, badge }) {
 export default function Investigate() {
   const [hasStarted, setHasStarted] = useState(false);
   const [repoUrl, setRepoUrl] = useState(DEMOS[0].url);
+  const [ecosystem, setEcosystem] = useState(DEMOS[0].ecosystem || "auto");
   const [running, setRunning] = useState(false);
   const [error, setError] = useState("");
   const [graphState, setGraphState] = useState(createInitialGraphState);
@@ -143,7 +169,7 @@ export default function Investigate() {
     setGraphState(gs);
 
     try {
-      const sessionId = await startInvestigationAsync(repoUrl);
+      const sessionId = await startInvestigationAsync(repoUrl, ecosystem);
       let since = 0;
       let status = "running";
 
@@ -209,7 +235,7 @@ export default function Investigate() {
     } finally {
       setRunning(false);
     }
-  }, [repoUrl, processEvents]);
+  }, [repoUrl, ecosystem, processEvents]);
 
   useEffect(() => {
     if (hasStarted && running && rightPanelRef.current) {
@@ -239,6 +265,8 @@ export default function Investigate() {
       <LandingView
         repoUrl={repoUrl}
         setRepoUrl={setRepoUrl}
+        ecosystem={ecosystem}
+        setEcosystem={setEcosystem}
         running={running}
         error={error}
         onRun={run}
@@ -273,7 +301,15 @@ export default function Investigate() {
   );
 }
 
-function LandingView({ repoUrl, setRepoUrl, running, error, onRun }) {
+function LandingView({
+  repoUrl,
+  setRepoUrl,
+  ecosystem,
+  setEcosystem,
+  running,
+  error,
+  onRun,
+}) {
   return (
     <div
       style={{
@@ -354,12 +390,49 @@ function LandingView({ repoUrl, setRepoUrl, running, error, onRun }) {
             marginTop: "12px",
           }}
         >
+          {ECOSYSTEMS.map((eco) => (
+            <button
+              key={eco.id}
+              type="button"
+              disabled={running}
+              onClick={() => setEcosystem(eco.id)}
+              style={{
+                fontSize: "12px",
+                padding: "5px 12px",
+                borderRadius: "16px",
+                border: `1px solid ${ecosystem === eco.id ? "#22d3ee" : "#1e2d3d"}`,
+                background:
+                  ecosystem === eco.id
+                    ? "rgba(34,211,238,0.1)"
+                    : "rgba(13,17,23,0.8)",
+                color: ecosystem === eco.id ? "#22d3ee" : "#64748b",
+                cursor: running ? "not-allowed" : "pointer",
+                fontFamily: MONO,
+              }}
+            >
+              {eco.label}
+            </button>
+          ))}
+        </div>
+
+        <div
+          style={{
+            display: "flex",
+            flexWrap: "wrap",
+            justifyContent: "center",
+            gap: "8px",
+            marginTop: "12px",
+          }}
+        >
           {DEMOS.map((d) => (
             <button
               key={d.url}
               type="button"
               disabled={running}
-              onClick={() => setRepoUrl(d.url)}
+              onClick={() => {
+                setRepoUrl(d.url);
+                if (d.ecosystem) setEcosystem(d.ecosystem);
+              }}
               style={{
                 fontSize: "13px",
                 padding: "6px 16px",

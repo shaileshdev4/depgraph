@@ -1,4 +1,4 @@
-"""Post-process executive summary markdown from LLM output."""
+"""Executive summary sanitization (standalone — safe for Jac import from .jac files)."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ import re
 
 
 def sanitize_executive_summary(text: str) -> str:
+    """Strip broken mailto/markdown links for package names in LLM summaries."""
     if not text:
         return ""
     out = str(text)

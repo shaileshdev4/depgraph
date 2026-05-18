@@ -1,18 +1,57 @@
 """Classify package usage from GitHub import file paths (deterministic, no LLM)."""
 
-def filter_code_import_paths(paths: list[str]) -> list[str] {
+def _path_matches_ecosystem(path_lower: str, ecosystem: str) -> bool {
+    eco = str(ecosystem).lower();
+    if eco == "pypi" {
+        return (
+            path_lower.endswith(".py")
+            or path_lower.endswith(".pyi")
+        );
+    }
+    if eco == "go" {
+        return path_lower.endswith(".go");
+    }
+    if eco == "maven" {
+        return (
+            path_lower.endswith(".java")
+            or path_lower.endswith(".kt")
+            or path_lower.endswith(".kts")
+            or path_lower.endswith(".scala")
+            or path_lower.endswith(".groovy")
+        );
+    }
+    if eco == "auto" {
+        return (
+            path_lower.endswith(".ts")
+            or path_lower.endswith(".js")
+            or path_lower.endswith(".tsx")
+            or path_lower.endswith(".jsx")
+            or path_lower.endswith(".mjs")
+            or path_lower.endswith(".cjs")
+            or path_lower.endswith(".py")
+            or path_lower.endswith(".go")
+            or path_lower.endswith(".java")
+            or path_lower.endswith(".kt")
+        );
+    }
+    return (
+        path_lower.endswith(".ts")
+        or path_lower.endswith(".js")
+        or path_lower.endswith(".tsx")
+        or path_lower.endswith(".jsx")
+        or path_lower.endswith(".mjs")
+        or path_lower.endswith(".cjs")
+    );
+}
+
+def filter_code_import_paths(
+    paths: list[str],
+    ecosystem: str = "npm"
+) -> list[str] {
     filtered: list[str] = [];
     for path in paths {
         p = str(path);
-        pl = p.lower();
-        if (
-            pl.endswith(".ts")
-            or pl.endswith(".js")
-            or pl.endswith(".tsx")
-            or pl.endswith(".jsx")
-            or pl.endswith(".mjs")
-            or pl.endswith(".cjs")
-        ) {
+        if _path_matches_ecosystem(p.lower(), ecosystem) {
             filtered.append(p);
         }
     }
@@ -21,18 +60,22 @@ def filter_code_import_paths(paths: list[str]) -> list[str] {
 
 def classify_usage_from_paths(
     package_name: str,
-    importing_files: list[str]
+    importing_files: list[str],
+    ecosystem: str = "npm"
 ) -> dict {
     import re;
 
-    importing_files = filter_code_import_paths(importing_files);
+    importing_files = filter_code_import_paths(importing_files, ecosystem);
 
     TEST_PATTERNS = [
         r"[/\\]test[s]?[/\\]",
         r"[/\\]spec[s]?[/\\]",
         r"[/\\]__tests__[/\\]",
+        r"[/\\]tests[/\\]",
         r"\.test\.[jt]sx?$",
         r"\.spec\.[jt]sx?$",
+        r"test_.*\.py$",
+        r"[/\\]_test\.go$",
         r"[/\\]e2e[/\\]",
         r"[/\\]cypress[/\\]",
         r"[/\\]jest[/\\]",
@@ -49,6 +92,8 @@ def classify_usage_from_paths(
         r"jest\.config",
         r"[/\\]build[/\\]",
         r"[/\\]dist[/\\]",
+        r"setup\.py$",
+        r"[/\\]cmd[/\\]",
     ];
 
     if not importing_files {
