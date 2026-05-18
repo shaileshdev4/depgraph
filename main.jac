@@ -140,12 +140,41 @@ def:pub app -> JsxElement {
                             if "candidate_count" in row
                             else 0
                         );
-                        line = f"- {ev}: LLM picks subtrees from {cnt} candidates";
+                        pool = (
+                            row["llm_pool_count"]
+                            if "llm_pool_count" in row
+                            else cnt
+                        );
+                        line = (
+                            f"- {ev}: LLM picks from top {pool} "
+                            f"of {cnt} candidates"
+                        );
                     }
                     if ev == "spawn_chosen" {
                         mode = str(row["mode"]) if "mode" in row else "?";
                         targets = str(row["targets"]) if "targets" in row else "?";
-                        line = f"- {ev}: {mode} → {targets}";
+                        llm_n = row["llm_picks"] if "llm_picks" in row else 0;
+                        risk_n = row["risk_picks"] if "risk_picks" in row else 0;
+                        if risk_n > 0 {
+                            line = (
+                                f"- {ev}: {mode} ({llm_n} LLM + "
+                                f"{risk_n} risk) → {targets}"
+                            );
+                        } else {
+                            line = f"- {ev}: {mode} → {targets}";
+                        }
+                    }
+                    if ev == "spawn_llm_partial" {
+                        llm_n = row["llm_picks"] if "llm_picks" in row else 0;
+                        risk_n = row["risk_picks"] if "risk_picks" in row else 0;
+                        line = (
+                            f"- {ev}: {llm_n} LLM picks, "
+                            f"{risk_n} risk fallback (empty model response)"
+                        );
+                    }
+                    if ev == "spawn_llm_failed" {
+                        reason = str(row["reason"]) if "reason" in row else "?";
+                        line = f"- {ev}: {reason}";
                     }
                     if ev == "deep_dive" {
                         pkg = str(row["package"]) if "package" in row else "?";
