@@ -24,7 +24,29 @@ jac install
 jac start --dev
 ```
 
-Open http://localhost:8000/cl/app
+Open http://localhost:8000/cl/app (Jac CL UI) **or** the React graph UI below.
+
+### React graph UI (demo)
+
+**Vite** (not CRA) — fast dev server, proxies walker API to Jac.
+
+```powershell
+# Terminal 1 — backend
+jac start --dev
+
+# Terminal 2 — frontend
+cd frontend
+npm install
+npm run dev
+```
+
+Open http://localhost:5173 — investigation path graph, CVE cards, activity log.
+
+| Model | Task |
+|-------|------|
+| Qwen2.5-7B | Spawn root selection (JSON) |
+| DeepSeek-V3 | Subtree route hops |
+| Qwen2.5-Coder-32B | Executive summary |
 
 ## What works now (MVP)
 
