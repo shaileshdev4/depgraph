@@ -23,7 +23,7 @@ walker:pub start_investigation {
 to cl:
 
 def:pub app -> JsxElement {
-    has repo_url: str = "https://github.com/shaileshdev4/drygate";
+    has repo_url: str = "https://github.com/juice-shop/juice-shop";
     has status: str = "idle";
     has log_text: str = "";
     has findings_text: str = "";
@@ -74,6 +74,97 @@ def:pub app -> JsxElement {
                         nbr = row["neighbor_count"] if "neighbor_count" in row else 0;
                         line = f"- {ev}: from {pkg} → LLM picks 1 of {nbr} deps";
                     }
+                    if ev == "route_chosen" {
+                        frm = str(row["from_package"]) if "from_package" in row else "?";
+                        mode = str(row["mode"]) if "mode" in row else "?";
+                        targets = str(row["targets"]) if "targets" in row else "?";
+                        idxs = row["indexes"] if "indexes" in row else [];
+                        line = (
+                            f"- {ev}: {mode} → {targets} "
+                            f"(from {frm}, idx {idxs})"
+                        );
+                    }
+                    if ev == "manifest_parsing" {
+                        fname = (
+                            str(row["filename"])
+                            if "filename" in row
+                            else "manifest"
+                        );
+                        nbytes = row["bytes"] if "bytes" in row else 0;
+                        line = f"- {ev}: {fname} ({nbytes} bytes)";
+                    }
+                    if ev == "manifest_parsed" {
+                        cnt = (
+                            row["package_count"]
+                            if "package_count" in row
+                            else 0
+                        );
+                        trunc = (
+                            row["truncated"] if "truncated" in row else False
+                        );
+                        orig = (
+                            row["original_package_count"]
+                            if "original_package_count" in row
+                            else cnt
+                        );
+                        method = (
+                            str(row["filter_method"])
+                            if "filter_method" in row
+                            else ""
+                        );
+                        if trunc {
+                            line = (
+                                f"- {ev}: {cnt} packages in graph "
+                                f"(risk filter from {orig}, {method})"
+                            );
+                        } else {
+                            line = f"- {ev}: {cnt} packages";
+                        }
+                    }
+                    if ev == "lockfile_fetched" {
+                        fname = (
+                            str(row["filename"])
+                            if "filename" in row
+                            else "manifest"
+                        );
+                        kind = (
+                            str(row["manifest_kind"])
+                            if "manifest_kind" in row
+                            else "lockfile"
+                        );
+                        line = f"- {ev}: {fname} ({kind})";
+                    }
+                    if ev == "spawn_decision" {
+                        cnt = (
+                            row["candidate_count"]
+                            if "candidate_count" in row
+                            else 0
+                        );
+                        line = f"- {ev}: LLM picks subtrees from {cnt} candidates";
+                    }
+                    if ev == "spawn_chosen" {
+                        mode = str(row["mode"]) if "mode" in row else "?";
+                        targets = str(row["targets"]) if "targets" in row else "?";
+                        line = f"- {ev}: {mode} → {targets}";
+                    }
+                    if ev == "deep_dive" {
+                        pkg = str(row["package"]) if "package" in row else "?";
+                        cve = str(row["cve_id"]) if "cve_id" in row else "?";
+                        line = f"- {ev}: {pkg} critical ({cve})";
+                    }
+                    if ev == "report_generated" {
+                        summary = (
+                            str(row["summary"])
+                            if "summary" in row
+                            else ""
+                        );
+                        line = f"- {ev}: {summary[0:120]}";
+                    }
+                    if ev == "subtrees_spawned" {
+                        cnt = row["spawn_count"] if "spawn_count" in row else 0;
+                        mode = str(row["spawn_mode"]) if "spawn_mode" in row else "";
+                        line = f"- {ev}: {cnt} subtrees ({mode})";
+                    }
                 if ev == "investigation_complete" {
                     vuln = (
                         row["vulnerable_count"]
@@ -85,7 +176,15 @@ def:pub app -> JsxElement {
                         if "packages_scanned" in row
                         else 0
                     );
-                    line = f"- {ev}: {vuln} vulnerable of {scanned} scanned";
+                    spawns = (
+                        row["subtrees_spawned"]
+                        if "subtrees_spawned" in row
+                        else 0
+                    );
+                    line = (
+                        f"- {ev}: {vuln} vulnerable, "
+                        f"{scanned} OSV lookups ({spawns} subtrees)"
+                    );
                     items = (
                         row["findings"]
                         if ("findings" in row and row["findings"])
