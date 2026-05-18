@@ -1,11 +1,22 @@
 """Main orchestrator — manifest ingest, graph build, spawn subtree walkers."""
 
-import from graph.nodes { InvestigationSession, Package, CVE }
+import from graph.nodes { InvestigationSession, Package, CVE, UsageContext }
 import from graph.builder { build_package_graph }
-import from tools.github_api { fetch_github_npm_manifest }
+import from graph.snapshot_util {
+    build_graph_snapshot,
+    pkg_node_id,
+    severity_from_cvss
+}
+import from tools.github_api {
+    fetch_github_npm_manifest,
+    parse_github_repo_url,
+    search_github_package_imports
+}
 import from tools.jac_coerce { as_list }
 import from tools.lockfile_parser { parse_npm_lockfile, parse_npm_package_json }
 import from tools.risk_scorer { package_risk_score }
+import from walkers.extract_walker { extract_usage_context }
+import from walkers.remediation_walker { RemediationWalker }
 import from walkers.report_util { generate_executive_summary }
 import from walkers.route_util { select_spawn_root_index }
 import from walkers.subtree_walker { SubtreeWalker }
@@ -155,6 +166,66 @@ walker:pub DepGraphAgent {
             "filter_method": filter_method
         };
 
+        session_packages: list[Package] = [];
+        for pkg_node in [session-->][?:Package] {
+            session_packages.append(pkg_node);
+        }
+        snapshot = build_graph_snapshot(session_packages, parsed, []);
+        report {
+            "event": "graph_snapshot",
+            "nodes": snapshot["nodes"],
+            "edges": snapshot["edges"],
+            "package_count": pkg_count,
+            "edge_count": edge_cnt
+        };
+
+        owner_name = str(manifest_result["owner"]);
+        repo_name = str(manifest_result["repo"]);
+        for pkg_node in session_packages {
+            if not pkg_node.is_direct or pkg_node.depth > 1 {
+                continue;
+            }
+            paths = search_github_package_imports(
+                owner_name,
+                repo_name,
+                pkg_node.name
+            );
+            path_text = "";
+            for p in paths {
+                path_text = f"{path_text}{p}\n";
+            }
+            if not path_text {
+                path_text = "(no import paths found via GitHub search)";
+            }
+            usage_summary = "unknown";
+            is_prod = True;
+            try {
+                ctx = extract_usage_context(pkg_node.name, path_text);
+                if ctx and "risk_surface" in ctx {
+                    usage_summary = str(ctx["risk_surface"]);
+                }
+                if ctx and "is_reachable_in_prod" in ctx {
+                    is_prod = bool(ctx["is_reachable_in_prod"]);
+                }
+            } except Exception {
+                usage_summary = "unknown";
+            }
+            usage_node = UsageContext(
+                risk_surface=usage_summary,
+                is_reachable_in_prod=is_prod,
+                called_from_modules=paths
+            );
+            pkg_node ++> usage_node;
+            report {
+                "event": "usage_context",
+                "package": pkg_node.name,
+                "version": pkg_node.version,
+                "risk_surface": usage_summary,
+                "is_reachable_in_prod": is_prod,
+                "import_file_count": len(paths)
+            };
+        }
+
         candidates: list[Package] = [];
         for pkg_node in [session-->][?:Package] {
             if pkg_node.is_direct and pkg_node.depth <= 1 {
@@ -285,6 +356,27 @@ walker:pub DepGraphAgent {
         for pkg_node in spawn_targets {
             spawned_names = f"{spawned_names}{pkg_node.name} ";
         }
+        spawn_root_ids: list[str] = [];
+        for pkg_node in spawn_targets {
+            spawn_root_ids.append(pkg_node_id(pkg_node.name, pkg_node.version));
+        }
+        snapshot_after = build_graph_snapshot(
+            session_packages,
+            parsed,
+            spawn_root_ids
+        );
+        report {
+            "event": "spawn_roots",
+            "roots": spawn_root_ids
+        };
+        report {
+            "event": "graph_snapshot",
+            "nodes": snapshot_after["nodes"],
+            "edges": snapshot_after["edges"],
+            "package_count": pkg_count,
+            "edge_count": edge_cnt
+        };
+
         report {
             "event": "spawn_chosen",
             "mode": spawn_mode,
@@ -296,6 +388,9 @@ walker:pub DepGraphAgent {
 
         spawned = 0;
         lookup_count = 0;
+        route_llm_count = 0;
+        route_fallback_count = 0;
+        deep_dive_names: dict = {};
         for pkg_node in spawn_targets {
             subtree = SubtreeWalker(
                 depth_limit=3,
@@ -304,6 +399,23 @@ walker:pub DepGraphAgent {
             sub_lookups = subtree.osv_lookup_count;
             for entry in subtree.reports {
                 report entry;
+                if "event" in entry {
+                    ev_name = str(entry["event"]);
+                    if ev_name == "route_chosen" {
+                        rmode = str(entry.get("mode", "fallback"));
+                        if rmode == "llm" {
+                            route_llm_count += 1;
+                        } else {
+                            route_fallback_count += 1;
+                        }
+                    }
+                    if ev_name == "deep_dive" {
+                        dp = str(entry.get("package", ""));
+                        if dp {
+                            deep_dive_names[dp] = True;
+                        }
+                    }
+                }
                 if sub_lookups == 0 and "event" in entry {
                     if entry["event"] == "nvd_lookup" {
                         sub_lookups += 1;
@@ -329,10 +441,14 @@ walker:pub DepGraphAgent {
             }
             max_cvss = 0.0;
             top_cve = "";
+            fixed_version = "";
             for cve_node in cve_nodes {
                 if cve_node.cvss_score > max_cvss {
                     max_cvss = cve_node.cvss_score;
                     top_cve = cve_node.cve_id;
+                }
+                if cve_node.fixed_version and not fixed_version {
+                    fixed_version = str(cve_node.fixed_version);
                 }
             }
             findings.append(
@@ -341,9 +457,25 @@ walker:pub DepGraphAgent {
                     "version": pkg_node.version,
                     "cve_count": len(cve_nodes),
                     "max_cvss": max_cvss,
-                    "top_cve": top_cve
+                    "top_cve": top_cve,
+                    "severity": severity_from_cvss(max_cvss),
+                    "depth": pkg_node.depth,
+                    "is_direct": pkg_node.is_direct,
+                    "deep_dive_triggered": pkg_node.name in deep_dive_names,
+                    "fixed_version": fixed_version
                 }
             );
+        }
+
+        for pkg_node in [session-->][?:Package] {
+            cve_nodes = [pkg_node-->][?:CVE];
+            if not cve_nodes {
+                continue;
+            }
+            remed = RemediationWalker() spawn pkg_node;
+            for entry in remed.reports {
+                report entry;
+            }
         }
 
         findings_lines = "";
@@ -356,6 +488,13 @@ walker:pub DepGraphAgent {
         if not findings_lines {
             findings_lines = "No vulnerable packages in scanned subtrees.";
         }
+        critical_count = 0;
+        for item in findings {
+            if item["max_cvss"] >= 9.0 {
+                critical_count += 1;
+            }
+        }
+
         report {"event": "report_generating"};
         summary = "";
         try {
@@ -379,8 +518,15 @@ walker:pub DepGraphAgent {
         report {
             "event": "investigation_complete",
             "packages_scanned": lookup_count,
+            "packages_in_graph": pkg_count,
             "subtrees_spawned": spawned,
             "vulnerable_count": len(findings),
+            "critical_count": critical_count,
+            "spawn_mode": spawn_mode,
+            "route_llm_count": route_llm_count,
+            "route_fallback_count": route_fallback_count,
+            "truncated": truncated,
+            "original_package_count": original_cnt,
             "findings": findings,
             "executive_summary": summary
         };
