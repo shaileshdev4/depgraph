@@ -302,11 +302,17 @@ def search_github_package_imports(
         }
         queries.append(f"import {artifact} {scope}");
     } else {
+        queries.append(f"import {pkg} {scope}");
+        queries.append(f"from {pkg} {scope}");
         queries.append(f'from "{pkg}" {scope}');
         queries.append(f"from '{pkg}' {scope}");
+        queries.append(f"require({pkg}) {scope}");
         queries.append(f'require("{pkg}") {scope}');
         queries.append(f"require('{pkg}') {scope}");
         if pkg.startswith("@") {
+            queries.append(f'"{pkg}" {scope}');
+        }
+        if "-" in pkg {
             queries.append(f'"{pkg}" {scope}');
         }
     }
@@ -322,6 +328,24 @@ def search_github_package_imports(
             merged.append(path);
             if len(merged) >= 10 {
                 return merged;
+            }
+        }
+    }
+    if not merged {
+        fallback_queries: list[str] = [
+            f"{pkg} language:TypeScript {scope}",
+            f"{pkg} language:JavaScript {scope}",
+        ];
+        for query in fallback_queries {
+            for path in _github_code_search(owner, repo, query, headers) {
+                if path in seen {
+                    continue;
+                }
+                seen[path] = True;
+                merged.append(path);
+                if len(merged) >= 10 {
+                    return merged;
+                }
             }
         }
     }

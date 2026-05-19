@@ -10,14 +10,38 @@ import from tools.jac_coerce { as_list }
 import from walkers.extract_walker { classify_usage_from_paths }
 import from tools.investigation_runner { session_push }
 
+def _usage_surface_rank(surface: str) -> int {
+    s = str(surface).lower();
+    if s == "production" {
+        return 4;
+    }
+    if s == "mixed" {
+        return 3;
+    }
+    if s == "build" {
+        return 2;
+    }
+    if s == "test" {
+        return 1;
+    }
+    return 0;
+}
+
 def package_usage_surface(pkg_node: Package) -> str {
+    best_surface = "unknown";
+    best_rank = 0;
     for ctx_node in [pkg_node-->][?:UsageContext] {
         surface = str(ctx_node.risk_surface);
-        if surface {
-            return surface;
+        if not surface {
+            continue;
+        }
+        rank = _usage_surface_rank(surface);
+        if rank > best_rank {
+            best_rank = rank;
+            best_surface = surface;
         }
     }
-    return "unknown";
+    return best_surface;
 }
 
 def compute_exploitability(max_cvss: float, usage_surface: str) -> str {
@@ -50,10 +74,7 @@ def is_workspace_package(pkg_node: Package, repo_url: str) -> bool {
 }
 
 def package_has_usage_context(pkg_node: Package) -> bool {
-    for _ctx in [pkg_node-->][?:UsageContext] {
-        return True;
-    }
-    return False;
+    return _usage_surface_rank(package_usage_surface(pkg_node)) > 0;
 }
 
 def inherit_usage_from_importers(
@@ -132,15 +153,26 @@ def refresh_findings_usage(
                     import_count = len(files);
                 }
             }
-            if import_count == 0 {
+            if import_count == 0 or surface == "unknown" {
                 inherited = inherit_usage_from_importers(
                     pkg_node,
                     session_packages
                 );
-                if "surface" in inherited and "inherited_from" in inherited {
-                    raw_from = inherited["inherited_from"];
-                    if isinstance(raw_from, list) {
-                        item["usage_inherited_from"] = raw_from;
+                if inherited and "surface" in inherited {
+                    inh_surface = str(inherited["surface"]);
+                    if _usage_surface_rank(inh_surface) > _usage_surface_rank(surface) {
+                        item["usage_surface"] = inh_surface;
+                        item["exploitability"] = compute_exploitability(
+                            cvss_val,
+                            inh_surface
+                        );
+                        surface = inh_surface;
+                    }
+                    if "inherited_from" in inherited {
+                        raw_from = inherited["inherited_from"];
+                        if isinstance(raw_from, list) {
+                            item["usage_inherited_from"] = raw_from;
+                        }
                     }
                 }
             }

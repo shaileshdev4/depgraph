@@ -24,7 +24,7 @@ def generate_executive_summary(
 ) -> str by llm(
     model=routing_llm,
     temperature=0.2,
-    max_tokens=256
+    max_tokens=1024
 );
 
 def generate_executive_summary_safe(

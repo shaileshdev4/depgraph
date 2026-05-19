@@ -499,6 +499,22 @@ walker:pub DepGraphAgent {
             );
         }
 
+        for pkg_node in session_packages {
+            cve_nodes = [pkg_node-->][?:CVE];
+            if not cve_nodes {
+                continue;
+            }
+            if package_usage_surface(pkg_node) != "unknown" {
+                continue;
+            }
+            attach_usage_context_for_package(
+                self.repo_url,
+                pkg_node,
+                self.session_id,
+                session_packages
+            );
+        }
+
         report {
             "event": "subtrees_spawned",
             "spawn_count": spawned,
