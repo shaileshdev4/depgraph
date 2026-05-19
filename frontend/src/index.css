@@ -37,6 +37,10 @@ body {
 
 /* DepGraph global styles — add these to your existing index.css */
 
+.depgraph-brand__mark {
+  filter: drop-shadow(0 0 12px rgba(6, 182, 212, 0.25));
+}
+
 /* Keyframe animations used by graph nodes and UI components */
 
 @keyframes depgraph-pulse {

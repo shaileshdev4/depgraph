@@ -4,6 +4,7 @@ import DependencyGraph from "../components/DependencyGraph";
 import CVECard from "../components/CVECard";
 import ActivityFeed from "../components/ActivityFeed";
 import ExecutiveSummary from "../components/ExecutiveSummary";
+import BrandLogo from "../components/BrandLogo";
 import {
   applyEvent,
   computeStats,
@@ -421,30 +422,10 @@ function LandingView({
         boxSizing: "border-box",
       }}
     >
-      <div style={{ textAlign: "center" }}>
-        <h1
-          style={{
-            fontSize: "48px",
-            fontWeight: "800",
-            color: "#e2e8f0",
-            letterSpacing: "-0.04em",
-            fontFamily: MONO,
-            margin: 0,
-          }}
-        >
-          <span style={{ color: "#06b6d4" }}>Dep</span>Graph
-        </h1>
-        <p
-          style={{
-            fontSize: "15px",
-            color: "#475569",
-            marginTop: "8px",
-            letterSpacing: "0.02em",
-          }}
-        >
-          Autonomous dependency vulnerability investigation
-        </p>
-      </div>
+      <BrandLogo
+        size={72}
+        subtitle="Autonomous dependency vulnerability investigation"
+      />
 
       <div style={{ width: "100%", maxWidth: "600px" }}>
         <input
@@ -645,22 +626,12 @@ function InvestigationView({
             minHeight: "42px",
           }}
         >
-        <div style={{ flexShrink: 0, minWidth: "100px" }}>
-          <div
-            style={{
-              fontSize: "16px",
-              fontWeight: 800,
-              color: "#e2e8f0",
-              fontFamily: MONO,
-              letterSpacing: "-0.03em",
-              lineHeight: 1.1,
-            }}
-          >
-            <span style={{ color: "#06b6d4" }}>Dep</span>Graph
-          </div>
-          <div style={{ fontSize: "10px", color: "#334155", marginTop: "1px" }}>
-            vulnerability investigation
-          </div>
+        <div style={{ flexShrink: 0 }}>
+          <BrandLogo
+            size={32}
+            compact
+            subtitle="vulnerability investigation"
+          />
         </div>
 
         <div

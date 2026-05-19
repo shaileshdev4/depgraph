@@ -188,9 +188,10 @@ depgraph/
 │   └── investigation_runner.py # Async investigation thread
 ├── models/llm_config.jac
 └── frontend/                   # Vite + React (primary UI)
+    ├── public/depgraph-logo.png  # Brand mark (favicon + UI)
     └── src/
         ├── pages/Investigate.jsx
-        ├── components/         # Graph, CVECard, ActivityFeed, …
+        ├── components/         # BrandLogo, Graph, CVECard, ActivityFeed, …
         └── utils/eventProcessor.js
 ```
 
