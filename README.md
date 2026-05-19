@@ -11,6 +11,8 @@ DepGraph does not flatten your repo into a CVE spreadsheet. It builds a **risk-s
 | Reachability | Often manual | **GitHub import search** + transitive inheritance |
 
 - **Repo:** https://github.com/shaileshdev4/depgraph
+- **Live app:** https://depgraph.vercel.app/
+- **API:** https://depgraph-production.up.railway.app
 - **Demo repo:** [drygate](https://github.com/shaileshdev4/drygate) (axios → follow-redirects, production usage)
 
 ---
@@ -143,10 +145,15 @@ Copy `.env.example` → `.env`. Do not commit `.env`.
 
 ### Deploy (Vercel + Railway)
 
-| Host | What |
-|------|------|
-| **Railway** | `depgraph/` root — start: `jac start -p $PORT --no_client` — env: `FEATHERLESS_API_KEY`, `GITHUB_TOKEN`, `PYTHONIOENCODING=utf-8` (async runner uses `PORT` for in-container `/walker` calls) |
-| **Vercel** | `depgraph/frontend` — env: `VITE_API_URL=https://your-app.up.railway.app` (no trailing slash) |
+| | URL |
+|---|-----|
+| **Frontend (Vercel)** | https://depgraph.vercel.app/ |
+| **Backend (Railway)** | https://depgraph-production.up.railway.app |
+
+| Host | Setup |
+|------|--------|
+| **Railway** | Repo root `depgraph/` — start: `jac start -p $PORT --no_client` — env: `FEATHERLESS_API_KEY`, `GITHUB_TOKEN`, `PYTHONIOENCODING=utf-8` (async runner uses `PORT` for in-container `/walker` calls) |
+| **Vercel** | Root directory `frontend` — env: `VITE_API_URL=https://depgraph-production.up.railway.app` (no trailing slash; redeploy after changing) |
 
 Local dev needs no `VITE_API_URL` (Vite proxies `/walker` to port 8001). See `frontend/.env.example`.
 
