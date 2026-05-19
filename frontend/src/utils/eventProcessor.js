@@ -109,6 +109,54 @@ export function computeExploitability(cvss, usageSurface) {
   return "MEDIUM";
 }
 
+function usageSurfaceRank(surface) {
+  const s = String(surface || "unknown").toLowerCase();
+  if (s === "production") return 4;
+  if (s === "mixed") return 3;
+  if (s === "build") return 2;
+  if (s === "test") return 1;
+  return 0;
+}
+
+function mergeUsageContext(map, row) {
+  if (!row?.package) return;
+  const surface = row.surface || row.risk_surface || "unknown";
+  const next = {
+    surface,
+    importing_file_count: row.importing_file_count ?? 0,
+    is_prod: row.is_prod ?? surface === "production",
+    inherited_from: row.inherited_from || [],
+  };
+  const existing = map.get(row.package);
+  if (!existing || usageSurfaceRank(next.surface) > usageSurfaceRank(existing.surface)) {
+    map.set(row.package, next);
+  }
+}
+
+/** Patch live findings when a usage_context event arrives after CVE cards exist. */
+export function applyUsageContextToFindings(findings, row) {
+  if (!row?.package || !Array.isArray(findings) || findings.length === 0) {
+    return findings;
+  }
+  const surface = row.surface || row.risk_surface || "unknown";
+  return findings.map((f) => {
+    if (f.package !== row.package) return f;
+    const usage_surface =
+      usageSurfaceRank(surface) > usageSurfaceRank(f.usage_surface)
+        ? surface
+        : f.usage_surface || surface;
+    return {
+      ...f,
+      usage_surface,
+      usage_inherited_from:
+        row.inherited_from?.length > 0
+          ? row.inherited_from
+          : f.usage_inherited_from,
+      exploitability: computeExploitability(f.max_cvss, usage_surface),
+    };
+  });
+}
+
 export function normalizeFindings(reports) {
   const deepDiveSet = new Set();
   const remediationMap = new Map();
@@ -127,12 +175,8 @@ export function normalizeFindings(reports) {
         breaking_changes: row.breaking_changes || [],
       });
     }
-    if (row.event === "usage_context" && row.package) {
-      usageMap.set(row.package, {
-        surface: row.surface || row.risk_surface || "unknown",
-        importing_file_count: row.importing_file_count ?? 0,
-        is_prod: row.is_prod ?? (row.surface === "production"),
-      });
+    if (row.event === "usage_context") {
+      mergeUsageContext(usageMap, row);
     }
   }
 
@@ -141,8 +185,9 @@ export function normalizeFindings(reports) {
     if (row.event === "investigation_complete" && Array.isArray(row.findings)) {
       return row.findings
         .map((f) => {
+          const usageCtx = usageMap.get(f.package);
           const usage_surface =
-            f.usage_surface || usageMap.get(f.package)?.surface || "unknown";
+            usageCtx?.surface || f.usage_surface || "unknown";
           return {
             ...f,
             deep_dive_triggered: f.deep_dive_triggered || deepDiveSet.has(f.package),
@@ -150,9 +195,10 @@ export function normalizeFindings(reports) {
             source: f.source || "osv",
             remediation: remediationMap.get(f.package) || null,
             usage_surface,
-            exploitability:
-              f.exploitability || computeExploitability(f.max_cvss, usage_surface),
-            usage_inherited_from: f.usage_inherited_from || null,
+            exploitability: computeExploitability(f.max_cvss, usage_surface),
+            usage_inherited_from:
+              f.usage_inherited_from ||
+              (usageCtx?.inherited_from?.length ? usageCtx.inherited_from : null),
           };
         })
         .sort((a, b) => (b.max_cvss || 0) - (a.max_cvss || 0));
@@ -217,13 +263,19 @@ export function normalizeUsageContexts(reports) {
   const map = new Map();
   for (const row of reports) {
     if (row.event === "usage_context") {
-      map.set(row.package, {
+      const surface = row.surface || row.risk_surface || "unknown";
+      const next = {
         package: row.package,
-        surface: row.surface || row.risk_surface || "unknown",
+        surface,
         importing_files: row.importing_files || [],
         importing_file_count: row.importing_file_count ?? 0,
         is_prod: row.is_prod ?? false,
-      });
+        inherited_from: row.inherited_from || [],
+      };
+      const existing = map.get(row.package);
+      if (!existing || usageSurfaceRank(next.surface) > usageSurfaceRank(existing.surface)) {
+        map.set(row.package, next);
+      }
     }
   }
   return [...map.values()];
@@ -233,7 +285,10 @@ export function normalizeUsageContexts(reports) {
 
 function sanitizeSummaryMarkdown(text) {
   if (!text) return "";
-  return String(text)
+  let out = String(text).trim();
+  const fenced = out.match(/^```(?:markdown|md)?\s*([\s\S]*?)```$/i);
+  if (fenced) out = fenced[1].trim();
+  return out
     .replace(/\[([^\]]+)\]\(mailto:[^)]*\)/gi, "`$1`")
     .replace(/\[([^\]]+@[^\]]+)\]\([^)]*\)/g, "`$1`");
 }

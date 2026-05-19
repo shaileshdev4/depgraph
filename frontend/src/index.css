@@ -21,6 +21,7 @@ body {
   color: #e5e7eb;
   font-family: 'Inter', -apple-system, sans-serif;
 }
+
 .react-flow__minimap {
   background: #111 !important;
 }
@@ -41,56 +42,348 @@ body {
   filter: drop-shadow(0 0 12px rgba(6, 182, 212, 0.25));
 }
 
+.depgraph-brand--animated .depgraph-brand__mark {
+  animation:
+    depgraph-logo-float 4.5s ease-in-out infinite,
+    depgraph-logo-glow 4.5s ease-in-out infinite;
+}
+
+@keyframes depgraph-logo-float {
+
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(-8px);
+  }
+}
+
+@keyframes depgraph-logo-glow {
+
+  0%,
+  100% {
+    filter: drop-shadow(0 0 12px rgba(6, 182, 212, 0.25));
+  }
+
+  50% {
+    filter: drop-shadow(0 0 24px rgba(6, 182, 212, 0.45));
+  }
+}
+
+/* Landing page */
+
+.depgraph-landing {
+  position: relative;
+  isolation: isolate;
+}
+
+.depgraph-landing__ambient {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 0;
+}
+
+.depgraph-landing__orb {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(72px);
+  will-change: transform;
+}
+
+.depgraph-landing__orb--cyan {
+  width: min(480px, 55vw);
+  height: min(480px, 55vw);
+  background: radial-gradient(circle, rgba(6, 182, 212, 0.35) 0%, transparent 68%);
+  top: 8%;
+  left: 12%;
+  animation: depgraph-landing-drift-a 16s ease-in-out infinite;
+}
+
+.depgraph-landing__orb--blue {
+  width: min(400px, 48vw);
+  height: min(400px, 48vw);
+  background: radial-gradient(circle, rgba(14, 116, 144, 0.28) 0%, transparent 70%);
+  bottom: 5%;
+  right: 8%;
+  animation: depgraph-landing-drift-b 18s ease-in-out infinite;
+}
+
+@keyframes depgraph-landing-drift-a {
+
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+
+  50% {
+    transform: translate(36px, -24px) scale(1.05);
+  }
+}
+
+@keyframes depgraph-landing-drift-b {
+
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+
+  50% {
+    transform: translate(-28px, 20px) scale(1.08);
+  }
+}
+
+.depgraph-landing__content {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  gap: 48px;
+}
+
+.depgraph-landing-enter {
+  opacity: 0;
+  animation: depgraph-landing-rise 0.85s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.depgraph-landing-enter--d1 {
+  animation-delay: 0.12s;
+}
+
+.depgraph-landing-enter--d2 {
+  animation-delay: 0.22s;
+}
+
+.depgraph-landing-enter--d3 {
+  animation-delay: 0.3s;
+}
+
+.depgraph-landing-enter--d4 {
+  animation-delay: 0.38s;
+}
+
+.depgraph-landing-enter--d5 {
+  animation-delay: 0.48s;
+}
+
+@keyframes depgraph-landing-rise {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.depgraph-landing-step {
+  opacity: 0;
+  animation: depgraph-landing-rise 0.65s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.depgraph-landing-step:nth-child(1) {
+  animation-delay: 0.55s;
+}
+
+.depgraph-landing-step:nth-child(2) {
+  animation-delay: 0.63s;
+}
+
+.depgraph-landing-step:nth-child(3) {
+  animation-delay: 0.71s;
+}
+
+.depgraph-landing-step:nth-child(4) {
+  animation-delay: 0.79s;
+}
+
+.depgraph-landing-input {
+  transition:
+    border-color 0.25s ease,
+    box-shadow 0.25s ease,
+    background-color 0.25s ease;
+}
+
+.depgraph-landing-input:focus {
+  border-color: #06b6d4 !important;
+  box-shadow: 0 0 0 3px rgba(6, 182, 212, 0.12) !important;
+}
+
+.depgraph-landing-btn {
+  transition:
+    transform 0.25s cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 0.25s ease,
+    background 0.25s ease;
+}
+
+.depgraph-landing-btn:not(:disabled):hover {
+  transform: translateY(-2px);
+}
+
+.depgraph-landing-btn:not(:disabled):active {
+  transform: translateY(0);
+}
+
+.depgraph-landing-chip {
+  transition:
+    transform 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+    border-color 0.2s ease,
+    background 0.2s ease,
+    color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.depgraph-landing-chip:not(:disabled):hover {
+  transform: translateY(-1px);
+}
+
+.depgraph-landing-error {
+  animation: depgraph-landing-rise 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+
+  .depgraph-brand--animated .depgraph-brand__mark,
+  .depgraph-landing__orb,
+  .depgraph-landing-enter,
+  .depgraph-landing-step,
+  .depgraph-landing-error {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+
+  .depgraph-landing-btn:not(:disabled):hover,
+  .depgraph-landing-chip:not(:disabled):hover {
+    transform: none;
+  }
+}
+
 /* Keyframe animations used by graph nodes and UI components */
 
 @keyframes depgraph-pulse {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.5; transform: scale(1.08); }
+
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  50% {
+    opacity: 0.5;
+    transform: scale(1.08);
+  }
 }
 
 @keyframes depgraph-blink {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.3; }
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.3;
+  }
 }
 
 @keyframes depgraph-spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 @keyframes depgraph-glow-pulse {
-  0%, 100% { box-shadow: 0 0 20px rgba(239,68,68,0.4), 0 0 40px rgba(239,68,68,0.15); }
-  50% { box-shadow: 0 0 32px rgba(239,68,68,0.7), 0 0 64px rgba(239,68,68,0.3); }
+
+  0%,
+  100% {
+    box-shadow: 0 0 20px rgba(239, 68, 68, 0.4), 0 0 40px rgba(239, 68, 68, 0.15);
+  }
+
+  50% {
+    box-shadow: 0 0 32px rgba(239, 68, 68, 0.7), 0 0 64px rgba(239, 68, 68, 0.3);
+  }
 }
 
 @keyframes depgraph-node-enter {
-  from { opacity: 0; transform: scale(0.7); }
-  to { opacity: 1; transform: scale(1); }
+  from {
+    opacity: 0;
+    transform: scale(0.7);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
 
 @keyframes depgraph-node-enter-stagger {
-  from { opacity: 0; transform: translateY(8px) scale(0.95); }
-  to { opacity: 1; transform: translateY(0) scale(1); }
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.95);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 @keyframes depgraph-scan {
-  0% { left: -100%; }
-  100% { left: 200%; }
+  0% {
+    left: -100%;
+  }
+
+  100% {
+    left: 200%;
+  }
 }
 
 @keyframes depgraph-card-enter {
-  from { opacity: 0; transform: translateX(12px); }
-  to { opacity: 1; transform: translateX(0); }
+  from {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
 }
 
 @keyframes depgraph-slide-in-left {
-  from { opacity: 0; transform: translateX(-20px); }
-  to { opacity: 1; transform: translateX(0); }
+  from {
+    opacity: 0;
+    transform: translateX(-20px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
 }
 
 @keyframes depgraph-fade-up {
-  from { opacity: 0; transform: translateY(16px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 /* Override React Flow default styles for dark theme */
@@ -103,7 +396,7 @@ body {
 }
 
 .react-flow__controls {
-  background: rgba(10,15,26,0.9) !important;
+  background: rgba(10, 15, 26, 0.9) !important;
   border: 1px solid #1e2d3d !important;
   border-radius: 8px !important;
   box-shadow: none !important;
@@ -118,7 +411,7 @@ body {
 }
 
 .react-flow__controls-button:hover {
-  background: rgba(6,182,212,0.1) !important;
+  background: rgba(6, 182, 212, 0.1) !important;
   fill: #06b6d4 !important;
 }
 
@@ -152,41 +445,67 @@ body {
 
 /* Analysis / executive summary */
 .depgraph-analysis {
-  padding: 18px 20px 22px;
+  padding: 20px 22px 24px;
   border-radius: 12px;
-  border: 1px solid #1a2a3a;
-  background: linear-gradient(160deg, rgba(10, 18, 32, 0.95) 0%, rgba(6, 12, 22, 0.75) 100%);
-  box-shadow: inset 0 1px 0 rgba(6, 182, 212, 0.06);
+  border: 1px solid rgba(30, 45, 61, 0.9);
+  background: linear-gradient(165deg,
+      rgba(12, 20, 34, 0.98) 0%,
+      rgba(8, 14, 24, 0.88) 55%,
+      rgba(6, 11, 20, 0.82) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(6, 182, 212, 0.08),
+    0 4px 24px rgba(0, 0, 0, 0.22);
+  box-sizing: border-box;
+  max-width: 100%;
+  min-height: 420px;
+  max-height: min(780px, 63vh);
+  overflow-x: auto;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
-.depgraph-analysis .prose {
-  font-size: 13px;
-  line-height: 1.8;
+.depgraph-analysis .prose,
+.depgraph-analysis .depgraph-summary-prose {
+  font-size: 12.5px;
+  line-height: 1.65;
   font-weight: 400;
-  color: #94a3b8;
+  letter-spacing: 0.012em;
+  color: #8b9cb3;
   max-width: none;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .depgraph-analysis .prose p {
-  margin: 0.75em 0;
+  margin: 0.55em 0;
   font-weight: 400;
-  color: #94a3b8;
+  color: #8b9cb3;
 }
 
-.depgraph-analysis .prose > p:first-child {
+.depgraph-analysis .prose>p:first-child {
   margin-top: 0;
-  font-size: 13.5px;
-  color: #cbd5e1;
+  margin-bottom: 0.85em;
+  padding-bottom: 0.85em;
+  font-size: 13px;
+  line-height: 1.6;
+  color: #b4c0d4;
+  border-bottom: 1px solid rgba(30, 45, 61, 0.65);
 }
 
 .depgraph-analysis .prose strong {
   font-weight: 500;
-  color: #cbd5e1;
+  color: #c4cede;
 }
 
 .depgraph-analysis .prose em {
   font-style: italic;
-  color: #64748b;
+  color: #6b7d94;
+}
+
+.depgraph-analysis .prose>h1:first-child,
+.depgraph-analysis .prose>h2:first-child,
+.depgraph-analysis .prose>h3:first-child {
+  margin-top: 0;
 }
 
 .depgraph-analysis .prose h1,
@@ -194,49 +513,63 @@ body {
 .depgraph-analysis .prose h3,
 .depgraph-analysis .prose h4 {
   font-weight: 600;
-  color: #e2e8f0;
-  margin: 1.35em 0 0.45em;
-  padding-left: 10px;
-  border-left: 2px solid rgba(6, 182, 212, 0.55);
-  letter-spacing: 0.01em;
-  line-height: 1.35;
+  color: #dce4ef;
+  margin: 1.15em 0 0.4em;
+  padding: 0.15em 0 0.15em 11px;
+  border-left: 2px solid rgba(6, 182, 212, 0.45);
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  line-height: 1.3;
 }
 
-.depgraph-analysis .prose h1 { font-size: 0.95rem; }
-.depgraph-analysis .prose h2 { font-size: 0.9rem; }
+.depgraph-analysis .prose h1 {
+  font-size: 0.8rem;
+}
+
+.depgraph-analysis .prose h2 {
+  font-size: 0.76rem;
+}
+
 .depgraph-analysis .prose h3,
-.depgraph-analysis .prose h4 { font-size: 0.85rem; color: #cbd5e1; }
+.depgraph-analysis .prose h4 {
+  font-size: 0.72rem;
+  color: #c8d2e0;
+  text-transform: none;
+  letter-spacing: 0.02em;
+}
 
 .depgraph-analysis .prose ul,
 .depgraph-analysis .prose ol {
-  margin: 0.5em 0 0.85em;
-  padding-left: 1.15em;
+  margin: 0.45em 0 0.7em;
+  padding-left: 1.2em;
 }
 
 .depgraph-analysis .prose li {
-  margin: 0.35em 0;
-  color: #94a3b8;
+  margin: 0.28em 0;
+  padding-left: 0.15em;
+  color: #8b9cb3;
   font-weight: 400;
 }
 
 .depgraph-analysis .prose li::marker {
-  color: #06b6d4;
+  color: rgba(6, 182, 212, 0.75);
 }
 
 .depgraph-analysis .prose hr {
   border: none;
   height: 1px;
-  margin: 1.25em 0;
-  background: linear-gradient(90deg, transparent, #1e2d3d 40%, #1e2d3d 60%, transparent);
+  margin: 1em 0;
+  background: linear-gradient(90deg, transparent, #243447 35%, #243447 65%, transparent);
 }
 
 .depgraph-analysis .prose code {
   font-family: 'JetBrains Mono', monospace;
-  font-size: 0.88em;
-  padding: 0.12em 0.4em;
+  font-size: 0.92em;
+  padding: 0.1em 0.35em;
   border-radius: 4px;
-  background: rgba(6, 182, 212, 0.08);
-  color: #67e8f9;
+  background: rgba(6, 182, 212, 0.1);
+  border: 1px solid rgba(6, 182, 212, 0.12);
+  color: #5eead4;
   font-weight: 400;
 }
 
@@ -244,6 +577,18 @@ body {
   color: #38bdf8;
   text-decoration: none;
   border-bottom: 1px solid rgba(56, 189, 248, 0.35);
+  overflow-wrap: anywhere;
+  word-break: break-all;
+}
+
+.depgraph-analysis .prose pre,
+.depgraph-analysis .prose code {
+  max-width: 100%;
+}
+
+.depgraph-analysis .prose pre {
+  overflow-x: auto;
+  white-space: pre-wrap;
 }
 
 .depgraph-analysis .prose a:hover {

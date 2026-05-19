@@ -199,15 +199,21 @@ export default function Investigate() {
             hotEdges: new Map(gs.hotEdges),
           });
           setLogEntries([...logs]);
-          setStats(computeStats(allReportsRef.current, gs));
-          setRemediations(normalizeRemediations(allReportsRef.current));
-          setUsageContexts(normalizeUsageContexts(allReportsRef.current));
+          const reports = allReportsRef.current;
+          setStats(computeStats(reports, gs));
+          setRemediations(normalizeRemediations(reports));
+          setUsageContexts(normalizeUsageContexts(reports));
 
           const complete = events.find((e) => e.event === "investigation_complete");
           if (complete) {
-            setFindings(normalizeFindings([...allReportsRef.current, complete]));
+            setFindings(normalizeFindings([...reports, complete]));
             setSummary(complete.executive_summary || complete.summary || "");
-            setStats(computeStats([...allReportsRef.current, complete], gs));
+            setStats(computeStats([...reports, complete], gs));
+          } else {
+            const interim = normalizeFindings(reports);
+            if (interim.length > 0) {
+              setFindings(interim);
+            }
           }
         }
 
@@ -327,7 +333,9 @@ function EcosystemDemoPicker({
   setRepoUrl,
   running,
   compact = false,
+  landingAnimate = false,
 }) {
+  const chipClass = landingAnimate ? " depgraph-landing-chip" : "";
   return (
     <div
       style={{
@@ -344,6 +352,7 @@ function EcosystemDemoPicker({
             key={eco.id}
             type="button"
             disabled={running}
+            className={chipClass.trim() || undefined}
             onClick={() => setEcosystem(eco.id)}
             style={{
               fontSize: "12px",
@@ -371,6 +380,7 @@ function EcosystemDemoPicker({
             key={d.url}
             type="button"
             disabled={running}
+            className={chipClass.trim() || undefined}
             onClick={() => {
               setRepoUrl(d.url);
               if (d.ecosystem) setEcosystem(d.ecosystem);
@@ -408,6 +418,7 @@ function LandingView({
 }) {
   return (
     <div
+      className="depgraph-landing"
       style={{
         minHeight: "100vh",
         height: "100vh",
@@ -418,17 +429,29 @@ function LandingView({
         alignItems: "center",
         justifyContent: "center",
         padding: "40px 20px",
-        gap: "48px",
         boxSizing: "border-box",
       }}
     >
-      <BrandLogo
-        size={72}
-        subtitle="Autonomous dependency vulnerability investigation"
-      />
+      <div className="depgraph-landing__ambient" aria-hidden="true">
+        <div className="depgraph-landing__orb depgraph-landing__orb--cyan" />
+        <div className="depgraph-landing__orb depgraph-landing__orb--blue" />
+      </div>
 
-      <div style={{ width: "100%", maxWidth: "600px" }}>
+      <div className="depgraph-landing__content">
+        <div className="depgraph-landing-enter">
+          <BrandLogo
+            size={72}
+            animated
+            subtitle="Autonomous dependency vulnerability investigation"
+          />
+        </div>
+
+        <div
+          className="depgraph-landing-enter depgraph-landing-enter--d1"
+          style={{ width: "100%", maxWidth: "600px" }}
+        >
         <input
+          className="depgraph-landing-input"
           style={{
             width: "100%",
             borderRadius: "10px",
@@ -447,26 +470,23 @@ function LandingView({
           onKeyDown={(e) => e.key === "Enter" && !running && onRun()}
           placeholder="https://github.com/owner/repo"
           disabled={running}
-          onFocus={(e) => {
-            e.target.style.borderColor = "#06b6d4";
-            e.target.style.boxShadow = "0 0 0 3px rgba(6,182,212,0.1)";
-          }}
-          onBlur={(e) => {
-            e.target.style.borderColor = "#1e3451";
-            e.target.style.boxShadow = "none";
-          }}
         />
 
-        <EcosystemDemoPicker
-          ecosystem={ecosystem}
-          setEcosystem={setEcosystem}
-          repoUrl={repoUrl}
-          setRepoUrl={setRepoUrl}
-          running={running}
-        />
+        <div className="depgraph-landing-enter depgraph-landing-enter--d2">
+          <EcosystemDemoPicker
+            ecosystem={ecosystem}
+            setEcosystem={setEcosystem}
+            repoUrl={repoUrl}
+            setRepoUrl={setRepoUrl}
+            running={running}
+            landingAnimate
+          />
+        </div>
 
+        <div className="depgraph-landing-enter depgraph-landing-enter--d3">
         <button
           type="button"
+          className="depgraph-landing-btn"
           onClick={onRun}
           disabled={running}
           style={{
@@ -486,23 +506,10 @@ function LandingView({
               ? "none"
               : "0 0 32px rgba(6,182,212,0.35), 0 4px 20px rgba(0,0,0,0.4)",
             letterSpacing: "0.02em",
-            transition: "all 0.2s",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
             gap: "10px",
-          }}
-          onMouseEnter={(e) => {
-            if (running) return;
-            e.currentTarget.style.background = "linear-gradient(135deg, #06b6d4, #0891b2)";
-            e.currentTarget.style.boxShadow =
-              "0 0 48px rgba(6,182,212,0.5), 0 4px 24px rgba(0,0,0,0.4)";
-          }}
-          onMouseLeave={(e) => {
-            if (running) return;
-            e.currentTarget.style.background = "linear-gradient(135deg, #0891b2, #0e7490)";
-            e.currentTarget.style.boxShadow =
-              "0 0 32px rgba(6,182,212,0.35), 0 4px 20px rgba(0,0,0,0.4)";
           }}
         >
           {running ? (
@@ -524,9 +531,11 @@ function LandingView({
             "Investigate →"
           )}
         </button>
+        </div>
 
         {error && (
           <p
+            className="depgraph-landing-error"
             style={{
               marginTop: "12px",
               fontSize: "12px",
@@ -537,12 +546,16 @@ function LandingView({
             {error}
           </p>
         )}
-      </div>
+        </div>
 
-      <div style={{ width: "100%", maxWidth: "500px" }}>
+        <div
+          className="depgraph-landing-enter depgraph-landing-enter--d5"
+          style={{ width: "100%", maxWidth: "500px" }}
+        >
         {STEPS.map((text, i) => (
           <div
             key={text}
+            className="depgraph-landing-step"
             style={{
               display: "flex",
               gap: "12px",
@@ -562,9 +575,12 @@ function LandingView({
             >
               {String(i + 1).padStart(2, "0")}
             </span>
-            <span style={{ fontSize: "12px", color: "#475569", lineHeight: 1.6 }}>{text}</span>
+            <span style={{ fontSize: "12px", color: "#475569", lineHeight: 1.6 }}>
+              {text}
+            </span>
           </div>
         ))}
+        </div>
       </div>
     </div>
   );
@@ -909,7 +925,10 @@ function InvestigationView({
             <>
               <SectionDivider />
               <SectionHeader title="Analysis" />
-              <div className="depgraph-analysis" style={{ margin: "0 12px 12px" }}>
+              <div
+                className="depgraph-analysis"
+                style={{ margin: "0 12px 12px", minWidth: 0, maxWidth: "100%" }}
+              >
                 <ExecutiveSummary markdown={summary} />
               </div>
             </>

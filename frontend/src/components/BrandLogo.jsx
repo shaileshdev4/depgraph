@@ -10,12 +10,13 @@ export default function BrandLogo({
   showText = true,
   compact = false,
   subtitle = null,
+  animated = false,
 }) {
   const titleSize = compact ? "16px" : "48px";
 
   return (
     <div
-      className="depgraph-brand"
+      className={`depgraph-brand${animated ? " depgraph-brand--animated" : ""}`}
       style={{
         display: "flex",
         flexDirection: compact ? "row" : "column",
