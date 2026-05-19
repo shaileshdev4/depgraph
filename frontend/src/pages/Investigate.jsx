@@ -35,6 +35,11 @@ const DEMOS = [
     ecosystem: "npm",
   },
   {
+    label: "requests",
+    url: "https://github.com/psf/requests",
+    ecosystem: "pypi",
+  },
+  {
     label: "flask",
     url: "https://github.com/pallets/flask",
     ecosystem: "pypi",
@@ -278,6 +283,8 @@ export default function Investigate() {
     <InvestigationView
       repoUrl={repoUrl}
       setRepoUrl={setRepoUrl}
+      ecosystem={ecosystem}
+      setEcosystem={setEcosystem}
       running={running}
       error={error}
       setError={setError}
@@ -298,6 +305,94 @@ export default function Investigate() {
       rightPanelRef={rightPanelRef}
       logSectionRef={logSectionRef}
     />
+  );
+}
+
+const chipRowStyle = {
+  display: "flex",
+  flexWrap: "nowrap",
+  justifyContent: "center",
+  alignItems: "center",
+  gap: "8px",
+  width: "100%",
+  overflowX: "auto",
+  WebkitOverflowScrolling: "touch",
+};
+
+function EcosystemDemoPicker({
+  ecosystem,
+  setEcosystem,
+  repoUrl,
+  setRepoUrl,
+  running,
+  compact = false,
+}) {
+  return (
+    <div
+      style={{
+        width: "100%",
+        marginTop: compact ? 0 : "12px",
+        display: "flex",
+        flexDirection: "column",
+        gap: "8px",
+      }}
+    >
+      <div style={chipRowStyle}>
+        {ECOSYSTEMS.map((eco) => (
+          <button
+            key={eco.id}
+            type="button"
+            disabled={running}
+            onClick={() => setEcosystem(eco.id)}
+            style={{
+              fontSize: "12px",
+              padding: "5px 12px",
+              borderRadius: "16px",
+              border: `1px solid ${ecosystem === eco.id ? "#22d3ee" : "#1e2d3d"}`,
+              background:
+                ecosystem === eco.id
+                  ? "rgba(34,211,238,0.1)"
+                  : "rgba(13,17,23,0.8)",
+              color: ecosystem === eco.id ? "#22d3ee" : "#64748b",
+              cursor: running ? "not-allowed" : "pointer",
+              fontFamily: MONO,
+              flexShrink: 0,
+              whiteSpace: "nowrap",
+            }}
+          >
+            {eco.label}
+          </button>
+        ))}
+      </div>
+      <div style={chipRowStyle}>
+        {DEMOS.map((d) => (
+          <button
+            key={d.url}
+            type="button"
+            disabled={running}
+            onClick={() => {
+              setRepoUrl(d.url);
+              if (d.ecosystem) setEcosystem(d.ecosystem);
+            }}
+            style={{
+              fontSize: "13px",
+              padding: "6px 16px",
+              borderRadius: "20px",
+              border: `1px solid ${repoUrl === d.url ? "#06b6d4" : "#1e2d3d"}`,
+              background:
+                repoUrl === d.url ? "rgba(6,182,212,0.1)" : "rgba(13,17,23,0.8)",
+              color: repoUrl === d.url ? "#06b6d4" : "#64748b",
+              cursor: running ? "not-allowed" : "pointer",
+              fontFamily: MONO,
+              flexShrink: 0,
+              whiteSpace: "nowrap",
+            }}
+          >
+            {d.label}
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -381,75 +476,13 @@ function LandingView({
           }}
         />
 
-        <div
-          style={{
-            display: "flex",
-            flexWrap: "wrap",
-            justifyContent: "center",
-            gap: "8px",
-            marginTop: "12px",
-          }}
-        >
-          {ECOSYSTEMS.map((eco) => (
-            <button
-              key={eco.id}
-              type="button"
-              disabled={running}
-              onClick={() => setEcosystem(eco.id)}
-              style={{
-                fontSize: "12px",
-                padding: "5px 12px",
-                borderRadius: "16px",
-                border: `1px solid ${ecosystem === eco.id ? "#22d3ee" : "#1e2d3d"}`,
-                background:
-                  ecosystem === eco.id
-                    ? "rgba(34,211,238,0.1)"
-                    : "rgba(13,17,23,0.8)",
-                color: ecosystem === eco.id ? "#22d3ee" : "#64748b",
-                cursor: running ? "not-allowed" : "pointer",
-                fontFamily: MONO,
-              }}
-            >
-              {eco.label}
-            </button>
-          ))}
-        </div>
-
-        <div
-          style={{
-            display: "flex",
-            flexWrap: "wrap",
-            justifyContent: "center",
-            gap: "8px",
-            marginTop: "12px",
-          }}
-        >
-          {DEMOS.map((d) => (
-            <button
-              key={d.url}
-              type="button"
-              disabled={running}
-              onClick={() => {
-                setRepoUrl(d.url);
-                if (d.ecosystem) setEcosystem(d.ecosystem);
-              }}
-              style={{
-                fontSize: "13px",
-                padding: "6px 16px",
-                borderRadius: "20px",
-                border: `1px solid ${repoUrl === d.url ? "#06b6d4" : "#1e2d3d"}`,
-                background:
-                  repoUrl === d.url ? "rgba(6,182,212,0.1)" : "rgba(13,17,23,0.8)",
-                color: repoUrl === d.url ? "#06b6d4" : "#64748b",
-                cursor: running ? "not-allowed" : "pointer",
-                fontFamily: MONO,
-                transition: "all 0.15s",
-              }}
-            >
-              {d.label}
-            </button>
-          ))}
-        </div>
+        <EcosystemDemoPicker
+          ecosystem={ecosystem}
+          setEcosystem={setEcosystem}
+          repoUrl={repoUrl}
+          setRepoUrl={setRepoUrl}
+          running={running}
+        />
 
         <button
           type="button"
@@ -559,6 +592,8 @@ function LandingView({
 function InvestigationView({
   repoUrl,
   setRepoUrl,
+  ecosystem,
+  setEcosystem,
   running,
   error,
   setError,
@@ -593,17 +628,23 @@ function InvestigationView({
       <header
         style={{
           flexShrink: 0,
-          height: "42px",
-          minHeight: "42px",
           display: "flex",
-          alignItems: "center",
-          gap: "12px",
-          padding: "9px 20px",
+          flexDirection: "column",
+          gap: "8px",
+          padding: "9px 20px 10px",
           background: "rgba(4,8,16,0.95)",
           borderBottom: "1px solid #0d1a26",
           boxSizing: "border-box",
         }}
       >
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "12px",
+            minHeight: "42px",
+          }}
+        >
         <div style={{ flexShrink: 0, minWidth: "100px" }}>
           <div
             style={{
@@ -675,28 +716,6 @@ function InvestigationView({
           >
             {running ? "…" : "Go"}
           </button>
-          {DEMOS.map((d) => (
-            <button
-              key={d.url}
-              type="button"
-              disabled={running}
-              onClick={() => setRepoUrl(d.url)}
-              style={{
-                fontSize: "10px",
-                padding: "4px 10px",
-                borderRadius: "14px",
-                border: `1px solid ${repoUrl === d.url ? "#06b6d4" : "#1e2d3d"}`,
-                background:
-                  repoUrl === d.url ? "rgba(6,182,212,0.1)" : "transparent",
-                color: repoUrl === d.url ? "#06b6d4" : "#64748b",
-                cursor: running ? "not-allowed" : "pointer",
-                fontFamily: MONO,
-                flexShrink: 0,
-              }}
-            >
-              {d.label}
-            </button>
-          ))}
         </div>
 
         <div style={{ flexShrink: 0, minWidth: "88px", textAlign: "right" }}>
@@ -724,6 +743,16 @@ function InvestigationView({
             </span>
           )}
         </div>
+        </div>
+
+        <EcosystemDemoPicker
+          ecosystem={ecosystem}
+          setEcosystem={setEcosystem}
+          repoUrl={repoUrl}
+          setRepoUrl={setRepoUrl}
+          running={running}
+          compact
+        />
       </header>
 
       <div
