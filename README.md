@@ -10,9 +10,9 @@ DepGraph does not flatten your repo into a CVE spreadsheet. It builds a **risk-s
 | Traversal | Fixed rules | **LLM Route** picks the next dependency to investigate |
 | Reachability | Often manual | **GitHub import search** + transitive inheritance |
 
-- **Repo:** https://github.com/shaileshdev4/depgraph
-- **Live app:** https://depgraph.vercel.app/
-- **API:** https://depgraph-production.up.railway.app
+- **Try it live:** [depgraph.vercel.app](https://depgraph.vercel.app/)
+- **API:** [depgraph-production.up.railway.app](https://depgraph-production.up.railway.app)
+- **Repo:** [github.com/shaileshdev4/depgraph](https://github.com/shaileshdev4/depgraph)
 - **Demo repo:** [drygate](https://github.com/shaileshdev4/drygate) (axios → follow-redirects, production usage)
 
 ---

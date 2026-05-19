@@ -1,6 +1,8 @@
 # DepGraph — JacHacks Spring 2026
 
-**Try it live:** [https://depgraph.vercel.app/](https://depgraph.vercel.app/) · **API:** [https://depgraph-production.up.railway.app](https://depgraph-production.up.railway.app) · **Repo:** [github.com/shaileshdev4/depgraph](https://github.com/shaileshdev4/depgraph)
+- **Try it live:** [depgraph.vercel.app](https://depgraph.vercel.app/)
+- **API:** [depgraph-production.up.railway.app](https://depgraph-production.up.railway.app)
+- **Repo:** [github.com/shaileshdev4/depgraph](https://github.com/shaileshdev4/depgraph)
 
 ---
 
