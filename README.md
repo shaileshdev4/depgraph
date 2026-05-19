@@ -14,7 +14,6 @@ DepGraph does not flatten your repo into a CVE spreadsheet. It builds a **risk-s
 - **Live app:** https://depgraph.vercel.app/
 - **API:** https://depgraph-production.up.railway.app
 - **Demo repo:** [drygate](https://github.com/shaileshdev4/drygate) (axios → follow-redirects, production usage)
-- **Hackathon write-up:** [DEVPOST.md](DEVPOST.md) (inspiration, architecture, challenges, deployment story)
 
 ---
 
@@ -199,8 +198,6 @@ depgraph/
 ├── tools/osv_api.jac
 └── frontend/                     # Vite + React (primary UI)
 ```
-
-See [Implementation.md](Implementation.md) for blueprint status.
 
 ---
 
