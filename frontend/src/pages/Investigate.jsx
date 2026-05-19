@@ -242,9 +242,13 @@ export default function Investigate() {
         e?.response?.data?.message ||
         e.message ||
         String(e);
-      if (status === 404 && !import.meta.env.VITE_API_URL) {
+      if ((status === 405 || status === 404) && !import.meta.env.VITE_API_URL) {
         setError(
-          "API not found — set VITE_API_URL to your Railway URL and redeploy the frontend"
+          "API not reachable — set VITE_API_URL to your Railway URL in Vercel and redeploy"
+        );
+      } else if (status === 405) {
+        setError(
+          "API method not allowed — check VITE_API_URL points to Railway (not the Vercel site URL)"
         );
       } else if (status === 404) {
         setError("Repository or manifest not found (404)");

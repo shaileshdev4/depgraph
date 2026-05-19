@@ -145,7 +145,7 @@ Copy `.env.example` → `.env`. Do not commit `.env`.
 
 | Host | What |
 |------|------|
-| **Railway** | `depgraph/` root — start: `jac start -p $PORT --no_client` — env: `FEATHERLESS_API_KEY`, `GITHUB_TOKEN`, `PYTHONIOENCODING=utf-8` |
+| **Railway** | `depgraph/` root — start: `jac start -p $PORT --no_client` — env: `FEATHERLESS_API_KEY`, `GITHUB_TOKEN`, `PYTHONIOENCODING=utf-8` (async runner uses `PORT` for in-container `/walker` calls) |
 | **Vercel** | `depgraph/frontend` — env: `VITE_API_URL=https://your-app.up.railway.app` (no trailing slash) |
 
 Local dev needs no `VITE_API_URL` (Vite proxies `/walker` to port 8001). See `frontend/.env.example`.

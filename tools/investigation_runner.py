@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import threading
 from typing import Any
 
@@ -16,22 +17,32 @@ from tools.session_store import (
 )
 from tools.summary_util import sanitize_executive_summary  # re-exported in __all__
 
-_API = "http://127.0.0.1:8001/walker/start_investigation"
 _TIMEOUT = 900
+
+
+def _resolve_api_base() -> str:
+    """Local dev: PORT unset → 8001. Railway: PORT=8080 → loopback on same container."""
+    explicit = os.environ.get("DEPGRAPH_API_BASE", "").strip()
+    if explicit:
+        return explicit.rstrip("/")
+    port = os.environ.get("PORT", "").strip()
+    if port:
+        return f"http://127.0.0.1:{port}"
+    return "http://127.0.0.1:8001"
 
 
 def begin_async_investigation(
     repo_url: str,
     ecosystem: str = "npm",
     max_direct_deps: int = 8,
-    api_base: str = "http://127.0.0.1:8001",
+    api_base: str | None = None,
 ) -> str:
-    global _API
-    _API = f"{api_base.rstrip('/')}/walker/start_investigation"
+    base = (api_base or _resolve_api_base()).rstrip("/")
+    start_url = f"{base}/walker/start_investigation"
     sid = create_session(repo_url)
     thread = threading.Thread(
         target=_run_investigation,
-        args=(sid, repo_url, ecosystem, max_direct_deps),
+        args=(sid, repo_url, ecosystem, max_direct_deps, start_url),
         daemon=True,
     )
     thread.start()
@@ -43,10 +54,11 @@ def _run_investigation(
     repo_url: str,
     ecosystem: str,
     max_direct_deps: int,
+    start_url: str,
 ) -> None:
     try:
         resp = requests.post(
-            _API,
+            start_url,
             json={
                 "repo_url": repo_url,
                 "ecosystem": ecosystem,
