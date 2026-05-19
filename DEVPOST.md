@@ -122,10 +122,6 @@ OSV returns patched versions inside `affected[].ranges[].events[].fixed` — a 3
 
 Fetching import context for all 69 packages in a repo hit GitHub's 30 requests/minute search limit. Solution: only fetch context for spawn targets + CVE-positive packages — the ~10 packages that actually matter for the investigation.
 
-**5. Production deployment (Vercel + Railway)**
-
-The async runner originally hardcoded `http://127.0.0.1:8001` for background `/walker/start_investigation` calls. On Railway, Jac listens on `$PORT` (8080). Sessions failed with "connection refused" until we resolved the API base from `PORT`. The frontend needed `VITE_API_URL` so Vercel wouldn't return 405 on `POST /walker/*`. Both fixes are in the repo and live on the URLs above.
-
 ---
 
 ## Accomplishments that we're proud of
