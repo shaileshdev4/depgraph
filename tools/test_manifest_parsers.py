@@ -10,6 +10,7 @@ from tools.manifest_parsers import (
     parse_gradle_lockfile,
     parse_npm_package_json,
     parse_poetry_lock,
+    parse_pyproject_toml,
     parse_requirements_txt,
 )
 
@@ -69,6 +70,18 @@ require (
     _assert_ok(parse_go_mod(sample))
 
 
+def test_pyproject_toml() -> None:
+    sample = """
+[project]
+name = "requests"
+dependencies = [
+  "charset_normalizer>=2,<4",
+  "urllib3>=1.26,<3",
+]
+"""
+    _assert_ok(parse_pyproject_toml(sample))
+
+
 def test_gradle_lockfile() -> None:
     sample = json.dumps(
         {
@@ -92,6 +105,7 @@ def main() -> int:
     tests = [
         test_npm_package_json,
         test_poetry_lock,
+        test_pyproject_toml,
         test_requirements_txt,
         test_go_mod,
         test_gradle_lockfile,

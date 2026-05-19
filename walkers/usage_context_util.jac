@@ -2,7 +2,10 @@
 
 import from graph.nodes { Package, UsageContext }
 import from graph.edges { DependsOn }
-import from tools.github_api { search_github_package_imports }
+import from tools.github_api {
+    parse_github_repo_url,
+    search_github_package_imports
+}
 import from tools.jac_coerce { as_list }
 import from walkers.extract_walker { classify_usage_from_paths }
 import from tools.investigation_runner { session_push }
@@ -29,6 +32,21 @@ def compute_exploitability(max_cvss: float, usage_surface: str) -> str {
         return "LOW";
     }
     return "MEDIUM";
+}
+
+# Root package.json name (depth 0) is not a third-party dependency.
+def is_workspace_package(pkg_node: Package, repo_url: str) -> bool {
+    if pkg_node.depth == 0 {
+        return True;
+    }
+    parsed = parse_github_repo_url(repo_url);
+    if parsed["ok"] {
+        repo_nm = str(parsed["repo"]).lower();
+        if repo_nm and str(pkg_node.name).lower() == repo_nm {
+            return True;
+        }
+    }
+    return False;
 }
 
 def package_has_usage_context(pkg_node: Package) -> bool {
@@ -140,7 +158,14 @@ def attach_usage_context_for_package(
     if package_has_usage_context(pkg_node) {
         return;
     }
-    paths = search_github_package_imports(repo_url, pkg_node.name);
+    if is_workspace_package(pkg_node, repo_url) {
+        return;
+    }
+    paths = search_github_package_imports(
+        repo_url,
+        pkg_node.name,
+        pkg_node.ecosystem
+    );
     inherited_from: list[str] = [];
     if paths {
         ctx = classify_usage_from_paths(

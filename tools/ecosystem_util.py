@@ -22,6 +22,7 @@ MANIFEST_CANDIDATES: dict[str, list[tuple[str, str]]] = {
     "pypi": [
         ("poetry.lock", "poetry_lock"),
         ("Pipfile.lock", "pipfile_lock"),
+        ("pyproject.toml", "pyproject_toml"),
         ("requirements.txt", "requirements_txt"),
     ],
     "go": [

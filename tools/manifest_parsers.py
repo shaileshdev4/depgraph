@@ -424,6 +424,89 @@ def parse_pipfile_lock(text: str, max_packages: int = 300) -> dict[str, Any]:
     return _ok_result(packages, edges, "pipfile_lock", max_packages)
 
 
+def _parse_pep508_name_version(spec: str) -> tuple[str, str]:
+    raw = str(spec).strip().strip('"').strip("'")
+    if not raw:
+        return "", ""
+    if ";" in raw:
+        raw = raw.split(";", 1)[0].strip()
+    if "[" in raw:
+        raw = raw.split("[", 1)[0].strip()
+    name = raw
+    version = ""
+    for op in ("==", ">=", "<=", "~=", "!=", ">", "<"):
+        if op in raw:
+            name, version = raw.split(op, 1)
+            name = name.strip()
+            version = version.strip()
+            break
+    if "," in version:
+        version = version.split(",", 1)[0].strip()
+    version = _normalize_version_spec(version) or (version if version else "0.0.0")
+    return name, version
+
+
+def parse_pyproject_toml(text: str, max_packages: int = 300) -> dict[str, Any]:
+    import tomllib
+
+    try:
+        data = tomllib.loads(text)
+    except Exception as exc:
+        return {"ok": False, "error": f"Invalid pyproject.toml: {exc}"}
+
+    project = data.get("project")
+    if not isinstance(project, dict):
+        return {"ok": False, "error": "pyproject.toml missing [project] table"}
+
+    root_name = str(project.get("name", "project"))
+    root_version = str(project.get("version", "0.0.0"))
+    if not root_version or root_version == "dynamic":
+        root_version = "0.0.0"
+    root_key = f"{root_name}@{root_version}"
+    packages: list[dict[str, Any]] = [
+        {
+            "key": root_key,
+            "name": root_name,
+            "version": root_version,
+            "is_direct": True,
+            "depth": 0,
+            "lock_path": "",
+        }
+    ]
+    edges: list[dict[str, Any]] = []
+
+    deps = project.get("dependencies") or []
+    if not isinstance(deps, list):
+        deps = []
+
+    for dep_spec in deps:
+        dep_name, dep_version = _parse_pep508_name_version(str(dep_spec))
+        if not dep_name:
+            continue
+        dep_key = f"{dep_name}@{dep_version}"
+        packages.append(
+            {
+                "key": dep_key,
+                "name": dep_name,
+                "version": dep_version,
+                "is_direct": True,
+                "depth": 1,
+                "lock_path": dep_name,
+            }
+        )
+        edges.append(
+            {
+                "from_key": root_key,
+                "to_key": dep_key,
+                "required_version": str(dep_spec),
+            }
+        )
+
+    if len(packages) <= 1:
+        return {"ok": False, "error": "pyproject.toml [project] has no dependencies"}
+    return _ok_result(packages, edges, "pyproject_toml", max_packages)
+
+
 def parse_requirements_txt(text: str, max_packages: int = 300) -> dict[str, Any]:
     root_name = "project"
     root_version = "0.0.0"
@@ -735,6 +818,8 @@ def parse_manifest(
             return parse_pipfile_lock(manifest_text, max_packages)
         if kind == "requirements_txt":
             return parse_requirements_txt(manifest_text, max_packages)
+        if kind == "pyproject_toml":
+            return parse_pyproject_toml(manifest_text, max_packages)
         return parse_poetry_lock(manifest_text, max_packages)
 
     if eco == "go":

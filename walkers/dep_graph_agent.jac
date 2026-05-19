@@ -23,6 +23,7 @@ import from walkers.usage_context_util {
     package_has_usage_context,
     attach_usage_context_for_package,
     refresh_findings_usage,
+    is_workspace_package,
 }
 import from tools.investigation_runner { session_push }
 
@@ -85,30 +86,6 @@ walker:pub DepGraphAgent {
     has reports: list[dict] = [];
 
     can start with Root entry {
-        session = InvestigationSession(
-            repo_url=self.repo_url,
-            ecosystem=self.ecosystem,
-            status="running"
-        );
-        root ++> session;
-        report {
-            "event": "session_started",
-            "repo_url": self.repo_url,
-            "ecosystem": self.ecosystem,
-            "session_id": self.session_id
-        };
-        if self.session_id {
-            session_push(
-                self.session_id,
-                {
-                    "event": "session_started",
-                    "repo_url": self.repo_url,
-                    "ecosystem": self.ecosystem,
-                    "session_id": self.session_id
-                }
-            );
-        }
-
         manifest_result = fetch_ecosystem_manifest(
             self.repo_url,
             self.ecosystem
@@ -132,7 +109,30 @@ walker:pub DepGraphAgent {
         if active_ecosystem == "auto" {
             active_ecosystem = "npm";
         }
-        session.ecosystem = active_ecosystem;
+
+        session = InvestigationSession(
+            repo_url=self.repo_url,
+            ecosystem=active_ecosystem,
+            status="running"
+        );
+        root ++> session;
+        report {
+            "event": "session_started",
+            "repo_url": self.repo_url,
+            "ecosystem": active_ecosystem,
+            "session_id": self.session_id
+        };
+        if self.session_id {
+            session_push(
+                self.session_id,
+                {
+                    "event": "session_started",
+                    "repo_url": self.repo_url,
+                    "ecosystem": active_ecosystem,
+                    "session_id": self.session_id
+                }
+            );
+        }
 
         manifest_kind = str(manifest_result.get("manifest_kind", "lockfile"));
         report {
@@ -235,6 +235,9 @@ walker:pub DepGraphAgent {
 
         candidates: list[Package] = [];
         for pkg_node in [session-->][?:Package] {
+            if is_workspace_package(pkg_node, self.repo_url) {
+                continue;
+            }
             if pkg_node.is_direct and pkg_node.depth <= 1 {
                 candidates.append(pkg_node);
             }

@@ -220,32 +220,16 @@ def fetch_github_npm_manifest(repo_url: str) -> dict {
     };
 }
 
-def search_github_package_imports(repo_url: str, package_name: str) -> list[str] {
-    ensure_dotenv_loaded();
-    import os;
+def _github_code_search(
+    owner: str,
+    repo: str,
+    query: str,
+    headers: dict
+) -> list[str] {
     import requests;
 
-    parsed = parse_github_repo_url(repo_url);
-    if not parsed["ok"] {
-        return [];
-    }
-    owner = str(parsed["owner"]);
-    repo = str(parsed["repo"]);
-
-    token = os.environ.get("GITHUB_TOKEN", "");
-    if not token {
-        return [];
-    }
-
-    headers = {
-        "Accept": "application/vnd.github+json",
-        "Authorization": f"Bearer {token}",
-    };
-
-    query = f'"{package_name}" repo:{owner}/{repo}';
     url = "https://api.github.com/search/code";
     params = {"q": query, "per_page": 10};
-
     try {
         resp = requests.get(url, headers=headers, params=params, timeout=15);
         if resp.status_code != 200 {
@@ -265,4 +249,81 @@ def search_github_package_imports(repo_url: str, package_name: str) -> list[str]
     } except Exception {
         return [];
     }
+}
+
+def search_github_package_imports(
+    repo_url: str,
+    package_name: str,
+    ecosystem: str = "npm"
+) -> list[str] {
+    ensure_dotenv_loaded();
+    import os;
+
+    parsed = parse_github_repo_url(repo_url);
+    if not parsed["ok"] {
+        return [];
+    }
+    owner = str(parsed["owner"]);
+    repo = str(parsed["repo"]);
+    pkg = str(package_name).strip();
+    if not pkg {
+        return [];
+    }
+    if pkg.lower() == repo.lower() {
+        return [];
+    }
+
+    token = os.environ.get("GITHUB_TOKEN", "");
+    if not token {
+        return [];
+    }
+
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "Authorization": f"Bearer {token}",
+    };
+
+    eco = str(ecosystem).lower();
+    if eco == "auto" {
+        eco = "npm";
+    }
+    scope = f"repo:{owner}/{repo}";
+    queries: list[str] = [];
+
+    if eco == "pypi" {
+        queries.append(f"import {pkg} {scope}");
+        queries.append(f"from {pkg} {scope}");
+    } elif eco == "go" {
+        queries.append(f'"{pkg}" {scope} extension:go');
+    } elif eco == "maven" {
+        artifact = pkg;
+        if ":" in pkg {
+            artifact = pkg.split(":", 1)[1];
+        }
+        queries.append(f"import {artifact} {scope}");
+    } else {
+        queries.append(f'from "{pkg}" {scope}');
+        queries.append(f"from '{pkg}' {scope}");
+        queries.append(f'require("{pkg}") {scope}');
+        queries.append(f"require('{pkg}') {scope}");
+        if pkg.startswith("@") {
+            queries.append(f'"{pkg}" {scope}');
+        }
+    }
+
+    seen: dict = {};
+    merged: list[str] = [];
+    for query in queries {
+        for path in _github_code_search(owner, repo, query, headers) {
+            if path in seen {
+                continue;
+            }
+            seen[path] = True;
+            merged.append(path);
+            if len(merged) >= 10 {
+                return merged;
+            }
+        }
+    }
+    return merged;
 }
