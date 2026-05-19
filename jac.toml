@@ -34,3 +34,9 @@ api_base = "https://api.featherless.ai/v1"
 
 [plugins.byllm.call_params]
 temperature = 0.2
+
+# Vercel UI → Railway API (cross-origin). Tighten to your Vercel URL in production if needed.
+[plugins.scale.cors]
+allow_origins = ["*"]
+allow_methods = ["GET", "POST", "OPTIONS"]
+allow_headers = ["*"]

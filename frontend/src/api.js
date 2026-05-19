@@ -1,6 +1,10 @@
 import axios from "axios";
 
+/** Production (Vercel): set VITE_API_URL to your Railway Jac host, no trailing slash. */
+const apiBase = (import.meta.env.VITE_API_URL || "").replace(/\/$/, "");
+
 const client = axios.create({
+  baseURL: apiBase,
   headers: { "Content-Type": "application/json" },
 });
 

@@ -236,11 +236,28 @@ export default function Investigate() {
       setRemediations(normalizeRemediations(reports));
       setUsageContexts(normalizeUsageContexts(reports));
     } catch (e) {
-      const msg = e?.response?.data?.detail || e.message || String(e);
-      if (msg.includes("404") || msg.includes("Not Found")) {
+      const status = e?.response?.status;
+      const msg =
+        e?.response?.data?.detail ||
+        e?.response?.data?.message ||
+        e.message ||
+        String(e);
+      if (status === 404 && !import.meta.env.VITE_API_URL) {
+        setError(
+          "API not found — set VITE_API_URL to your Railway URL and redeploy the frontend"
+        );
+      } else if (status === 404) {
         setError("Repository or manifest not found (404)");
-      } else if (msg.includes("ECONNREFUSED") || msg.includes("Network")) {
-        setError("Cannot reach API — start jac on port 8001 and npm run dev");
+      } else if (
+        msg.includes("ECONNREFUSED") ||
+        msg.includes("Network Error") ||
+        msg.includes("CORS")
+      ) {
+        setError(
+          import.meta.env.VITE_API_URL
+            ? "Cannot reach API — check VITE_API_URL and Railway CORS (FRONTEND_ORIGIN)"
+            : "Cannot reach API — start jac on port 8001 and npm run dev"
+        );
       } else {
         setError(msg);
       }
